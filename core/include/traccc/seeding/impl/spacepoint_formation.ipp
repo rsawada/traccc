@@ -41,4 +41,23 @@ TRACCC_HOST_DEVICE inline void fill_pixel_spacepoint(
     sp.z_variance() = 0.f;
 }
 
+template <typename spacepoint_backend_t, typename detector_t,
+          typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline void fill_strip_spacepoint(
+    edm::spacepoint<spacepoint_backend_t>& sp, const detector_t& det,
+    const edm::measurement<measurement_backend_t>& meas,
+    const typename detector_t::geometry_context gctx) {
+
+    // Get the global position of this silicon strip measurement.
+    const detray::tracking_surface sf{det, meas.surface_link()};
+    const point3 global = sf.local_to_global(gctx, meas.local_position(), {});
+
+    // Fill the spacepoint with the global position and the measurement.
+    sp.x() = global[0];
+    sp.y() = global[1];
+    sp.z() = global[2];
+    sp.radius_variance() = 0.f;
+    sp.z_variance() = 0.f;
+}
+
 }  // namespace traccc::details

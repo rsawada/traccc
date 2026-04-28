@@ -35,6 +35,13 @@ TRACCC_HOST_DEVICE inline void fill_pixel_spacepoint(
     const edm::measurement<measurement_backend_t>& meas,
     const typename detector_t::geometry_context gctx = {});
 
+template <typename spacepoint_backend_t, typename detector_t,
+          typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline void fill_strip_spacepoint(
+    edm::spacepoint<spacepoint_backend_t>& sp, const detector_t& det,
+    const edm::measurement<measurement_backend_t>& meas,
+    const typename detector_t::geometry_context gctx = {});
+
 }  // namespace traccc::details
 
 // Include the implementation.
