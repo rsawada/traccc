@@ -18,17 +18,18 @@
 namespace traccc::cuda {
 namespace kernels {
 
-/// Kernel wrapping @c device::form_spacepoints
+/// Kernel wrapping @c device::form_strip_spacepoints
 template <typename detector_t>
-__global__ void __launch_bounds__(1024, 1) form_spacepoints(
+__global__ void __launch_bounds__(1024, 1) form_strip_spacepoints_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     edm::spacepoint_collection::view spacepoints)
     requires(traccc::is_detector_traits<detector_t>)
 {
-    device::form_spacepoints<detector_t>(details::global_index1(), detector,
-                                         measurements, spacepoints);
+    device::form_strip_spacepoints<detector_t>(details::global_index1(),
+                                               detector, measurements,
+                                               spacepoints);
 }
 
 }  // namespace kernels
@@ -50,7 +51,7 @@ void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
     detector_buffer_visitor<detector_type_list>(
         payload.detector, [&]<typename detector_traits_t>(
                               const typename detector_traits_t::view& det) {
-            kernels::form_spacepoints<detector_traits_t>
+            kernels::form_strip_spacepoints_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.spacepoints);
         });

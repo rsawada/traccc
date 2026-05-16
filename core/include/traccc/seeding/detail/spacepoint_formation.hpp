@@ -21,6 +21,14 @@ template <typename measurement_backend_t>
 TRACCC_HOST_DEVICE inline bool is_valid_measurement(
     const edm::measurement<measurement_backend_t>& meas);
 
+template <typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_valid_pixel_measurement(
+    const edm::measurement<measurement_backend_t>& meas);
+
+template <typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_valid_strip_measurement(
+    const edm::measurement<measurement_backend_t>& meas);
+
 /// Fill a spacepoint object with the information from a measurement
 ///
 /// @param[out] sp          The spacepoint to fill

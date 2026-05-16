@@ -18,8 +18,19 @@ namespace traccc::details {
 template <typename measurement_backend_t>
 TRACCC_HOST_DEVICE inline bool is_valid_measurement(
     const edm::measurement<measurement_backend_t>& meas) {
-    // We use 2D (pixel) measurements only for spacepoint creation
+    return is_valid_pixel_measurement(meas);
+}
+
+template <typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_valid_pixel_measurement(
+    const edm::measurement<measurement_backend_t>& meas) {
     return (meas.dimensions() == 2u);
+}
+
+template <typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_valid_strip_measurement(
+    const edm::measurement<measurement_backend_t>& meas) {
+    return (meas.dimensions() == 1u);
 }
 
 template <typename spacepoint_backend_t, typename detector_t,

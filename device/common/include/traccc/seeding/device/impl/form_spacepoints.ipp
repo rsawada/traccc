@@ -22,6 +22,17 @@ TRACCC_HOST_DEVICE inline void form_spacepoints(
         measurements_view,
     edm::spacepoint_collection::view spacepoints_view) {
 
+    form_pixel_spacepoints<detector_t>(globalIndex, det_view, measurements_view,
+                                       spacepoints_view);
+}
+
+template <typename detector_t>
+TRACCC_HOST_DEVICE inline void form_pixel_spacepoints(
+    const global_index_t globalIndex, typename detector_t::view det_view,
+    const edm::measurement_collection<default_algebra>::const_view&
+        measurements_view,
+    edm::spacepoint_collection::view spacepoints_view) {
+
     // Set up the input container(s).
     const edm::measurement_collection<default_algebra>::const_device
         measurements(measurements_view);
@@ -40,16 +51,47 @@ TRACCC_HOST_DEVICE inline void form_spacepoints(
     const edm::measurement meas = measurements.at(globalIndex);
 
     // Fill the spacepoint using the common function.
-    if (details::is_valid_measurement(meas)) {
+    if (details::is_valid_pixel_measurement(meas)) {
         const edm::spacepoint_collection::device::size_type i =
             spacepoints.push_back_default();
         edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
-        if (1 /* pixel */) {
-            traccc::details::fill_pixel_spacepoint(sp, det, meas);
-        }
-        if (0 /* strip */) {
-            traccc::details::fill_strip_spacepoint(sp, det, meas);
-        }
+        traccc::details::fill_pixel_spacepoint(sp, det, meas);
+        sp.measurement_index_1() = globalIndex;
+        sp.measurement_index_2() =
+            edm::spacepoint_collection::device::INVALID_MEASUREMENT_INDEX;
+    }
+}
+
+template <typename detector_t>
+TRACCC_HOST_DEVICE inline void form_strip_spacepoints(
+    const global_index_t globalIndex, typename detector_t::view det_view,
+    const edm::measurement_collection<default_algebra>::const_view&
+        measurements_view,
+    edm::spacepoint_collection::view spacepoints_view) {
+
+    // Set up the input container(s).
+    const edm::measurement_collection<default_algebra>::const_device
+        measurements(measurements_view);
+
+    // Check if anything needs to be done
+    if (globalIndex >= measurements.size()) {
+        return;
+    }
+
+    // Create the tracking geometry
+    typename detector_t::device det(det_view);
+
+    // Set up the output container(s).
+    edm::spacepoint_collection::device spacepoints(spacepoints_view);
+
+    const edm::measurement meas = measurements.at(globalIndex);
+
+    // Simplified strip spacepoint: one 1D strip measurement creates one point.
+    if (details::is_valid_strip_measurement(meas)) {
+        const edm::spacepoint_collection::device::size_type i =
+            spacepoints.push_back_default();
+        edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
+        traccc::details::fill_strip_spacepoint(sp, det, meas);
         sp.measurement_index_1() = globalIndex;
         sp.measurement_index_2() =
             edm::spacepoint_collection::device::INVALID_MEASUREMENT_INDEX;
