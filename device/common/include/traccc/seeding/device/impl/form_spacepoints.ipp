@@ -98,4 +98,36 @@ TRACCC_HOST_DEVICE inline void form_strip_spacepoints(
     }
 }
 
+template <typename detector_t>
+TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
+    const global_index_t globalIndex, typename detector_t::view det_view,
+    const edm::measurement_collection<default_algebra>::const_view&
+        measurements_view,
+    const strip_pair_collection_types::const_view& pairs_view,
+    edm::spacepoint_collection::view spacepoints_view) {
+
+    const edm::measurement_collection<default_algebra>::const_device
+        measurements(measurements_view);
+    const strip_pair_collection_types::const_device pairs(pairs_view);
+    if (globalIndex >= pairs.size()) {
+        return;
+    }
+
+    typename detector_t::device det(det_view);
+    edm::spacepoint_collection::device spacepoints(spacepoints_view);
+    const strip_pair pair = pairs.at(globalIndex);
+    const edm::measurement first_meas =
+        measurements.at(pair.measurement_index_1);
+    const edm::measurement second_meas =
+        measurements.at(pair.measurement_index_2);
+
+    const edm::spacepoint_collection::device::size_type i =
+        spacepoints.push_back_default();
+    edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
+    traccc::details::fill_barrel_strip_spacepoint(sp, det, first_meas,
+                                                   second_meas);
+    sp.measurement_index_1() = pair.measurement_index_1;
+    sp.measurement_index_2() = pair.measurement_index_2;
+}
+
 }  // namespace traccc::device

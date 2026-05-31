@@ -43,6 +43,14 @@ class silicon_strip_spacepoint_formation_algorithm
     /// @c traccc::device::silicon_strip_spacepoint_formation_algorithm
     /// @{
 
+    /// Launch the strip pair counting kernel.
+    void count_strip_pairs_kernel(
+        const count_strip_pairs_kernel_payload& payload) const override;
+
+    /// Launch the strip pair finding kernel.
+    void find_strip_pairs_kernel(
+        const find_strip_pairs_kernel_payload& payload) const override;
+
     /// Launch the spacepoint formation kernel
     ///
     /// @param payload The payload for the kernel

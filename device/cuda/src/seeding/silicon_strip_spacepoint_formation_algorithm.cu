@@ -13,23 +13,53 @@
 
 // Project include(s).
 #include "traccc/geometry/detector.hpp"
+#include "traccc/seeding/device/count_strip_pairs.hpp"
+#include "traccc/seeding/device/find_strip_pairs.hpp"
 #include "traccc/seeding/device/form_spacepoints.hpp"
 
 namespace traccc::cuda {
 namespace kernels {
 
-/// Kernel wrapping @c device::form_strip_spacepoints
+/// Kernel wrapping @c device::count_strip_pairs.
 template <typename detector_t>
-__global__ void __launch_bounds__(1024, 1) form_strip_spacepoints_kernel(
+__global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
+    strip_pair_config config, unsigned int& n_pairs)
+    requires(traccc::is_detector_traits<detector_t>)
+{
+    device::count_strip_pairs<detector_t>(details::global_index1(), detector,
+                                          measurements, config, n_pairs);
+}
+
+/// Kernel wrapping @c device::find_strip_pairs.
+template <typename detector_t>
+__global__ void __launch_bounds__(1024, 1) find_strip_pairs_kernel(
+    typename detector_t::view detector,
+    typename edm::measurement_collection<
+        typename detector_t::device::algebra_type>::const_view measurements,
+    strip_pair_config config, unsigned int& pair_position,
+    strip_pair_collection_types::view pairs)
+    requires(traccc::is_detector_traits<detector_t>)
+{
+    device::find_strip_pairs<detector_t>(details::global_index1(), detector,
+                                         measurements, config, pair_position,
+                                         pairs);
+}
+
+/// Kernel wrapping @c device::form_barrel_strip_spacepoints.
+template <typename detector_t>
+__global__ void __launch_bounds__(1024, 1) form_barrel_strip_spacepoints_kernel(
+    typename detector_t::view detector,
+    typename edm::measurement_collection<
+        typename detector_t::device::algebra_type>::const_view measurements,
+    strip_pair_collection_types::const_view pairs,
     edm::spacepoint_collection::view spacepoints)
     requires(traccc::is_detector_traits<detector_t>)
 {
-    device::form_strip_spacepoints<detector_t>(details::global_index1(),
-                                               detector, measurements,
-                                               spacepoints);
+    device::form_barrel_strip_spacepoints<detector_t>(
+        details::global_index1(), detector, measurements, pairs, spacepoints);
 }
 
 }  // namespace kernels
@@ -42,8 +72,8 @@ silicon_strip_spacepoint_formation_algorithm::
                                                            std::move(logger)),
       cuda::algorithm_base(str) {}
 
-void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
-    const form_spacepoints_kernel_payload& payload) const {
+void silicon_strip_spacepoint_formation_algorithm::count_strip_pairs_kernel(
+    const count_strip_pairs_kernel_payload& payload) const {
 
     const unsigned int n_threads = warp_size() * 8;
     const unsigned int n_blocks =
@@ -51,9 +81,44 @@ void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
     detector_buffer_visitor<detector_type_list>(
         payload.detector, [&]<typename detector_traits_t>(
                               const typename detector_traits_t::view& det) {
-            kernels::form_strip_spacepoints_kernel<detector_traits_t>
+            kernels::count_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
-                    det, payload.measurements, payload.spacepoints);
+                    det, payload.measurements, payload.config,
+                    payload.n_pairs);
+        });
+    TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
+}
+
+void silicon_strip_spacepoint_formation_algorithm::find_strip_pairs_kernel(
+    const find_strip_pairs_kernel_payload& payload) const {
+
+    const unsigned int n_threads = warp_size() * 8;
+    const unsigned int n_blocks =
+        (payload.n_measurements + n_threads - 1) / n_threads;
+    detector_buffer_visitor<detector_type_list>(
+        payload.detector, [&]<typename detector_traits_t>(
+                              const typename detector_traits_t::view& det) {
+            kernels::find_strip_pairs_kernel<detector_traits_t>
+                <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
+                    det, payload.measurements, payload.config,
+                    payload.pair_position, payload.pairs);
+        });
+    TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
+}
+
+void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
+    const form_spacepoints_kernel_payload& payload) const {
+
+    const unsigned int n_threads = warp_size() * 8;
+    const unsigned int n_blocks =
+        (payload.n_pairs + n_threads - 1) / n_threads;
+    detector_buffer_visitor<detector_type_list>(
+        payload.detector, [&]<typename detector_traits_t>(
+                              const typename detector_traits_t::view& det) {
+            kernels::form_barrel_strip_spacepoints_kernel<detector_traits_t>
+                <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
+                    det, payload.measurements, payload.pairs,
+                    payload.spacepoints);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
 }

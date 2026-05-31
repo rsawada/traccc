@@ -105,6 +105,7 @@ traccc_add_library( traccc_core core TYPE SHARED
   # Seed finding algorithmic code.
   "include/traccc/seeding/detail/lin_circle.hpp"
   "include/traccc/seeding/detail/doublet.hpp"
+  "include/traccc/seeding/detail/strip_pair.hpp"
   "include/traccc/seeding/detail/triplet.hpp"
   "include/traccc/seeding/detail/singlet.hpp"
   "include/traccc/seeding/detail/seeding_config.hpp"

@@ -14,6 +14,7 @@
 #include "traccc/edm/measurement_collection.hpp"
 #include "traccc/edm/spacepoint_collection.hpp"
 #include "traccc/geometry/detector_buffer.hpp"
+#include "traccc/seeding/detail/strip_pair.hpp"
 #include "traccc/utils/algorithm.hpp"
 #include "traccc/utils/memory_resource.hpp"
 #include "traccc/utils/messaging.hpp"
@@ -60,17 +61,60 @@ class silicon_strip_spacepoint_formation_algorithm
     /// @name Function(s) to be implemented by derived classes
     /// @{
 
-    /// Payload for the @c form_spacepoints_kernel function
-    struct form_spacepoints_kernel_payload {
-        /// The number of measurements in the event
+    /// Payload for the @c count_strip_pairs_kernel function.
+    struct count_strip_pairs_kernel_payload {
+        /// The number of measurements in the event.
         edm::measurement_collection<default_algebra>::const_view::size_type
             n_measurements;
-        /// The detector object
+        /// The detector object.
         const detector_buffer& detector;
-        /// The input measurements
+        /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
-        /// The output spacepoints
+        /// Configuration for the initial barrel strip pair search.
+        const strip_pair_config& config;
+        /// Total number of compatible strip pairs.
+        unsigned int& n_pairs;
+    };
+
+    /// Launch the strip pair counting kernel.
+    virtual void count_strip_pairs_kernel(
+        const count_strip_pairs_kernel_payload& payload) const = 0;
+
+    /// Payload for the @c find_strip_pairs_kernel function.
+    struct find_strip_pairs_kernel_payload {
+        /// The number of measurements in the event.
+        edm::measurement_collection<default_algebra>::const_view::size_type
+            n_measurements;
+        /// The detector object.
+        const detector_buffer& detector;
+        /// The input measurements.
+        const edm::measurement_collection<default_algebra>::const_view&
+            measurements;
+        /// Configuration for the initial barrel strip pair search.
+        const strip_pair_config& config;
+        /// Next position in the output pair buffer.
+        unsigned int& pair_position;
+        /// Output strip pairs.
+        strip_pair_collection_types::view& pairs;
+    };
+
+    /// Launch the strip pair finding kernel.
+    virtual void find_strip_pairs_kernel(
+        const find_strip_pairs_kernel_payload& payload) const = 0;
+
+    /// Payload for the @c form_spacepoints_kernel function
+    struct form_spacepoints_kernel_payload {
+        /// The number of compatible barrel strip pairs in the event.
+        strip_pair_collection_types::const_view::size_type n_pairs;
+        /// The detector object.
+        const detector_buffer& detector;
+        /// The input measurements.
+        const edm::measurement_collection<default_algebra>::const_view&
+            measurements;
+        /// The compatible barrel strip pairs.
+        const strip_pair_collection_types::const_view& pairs;
+        /// The output spacepoints.
         edm::spacepoint_collection::view& spacepoints;
     };
 

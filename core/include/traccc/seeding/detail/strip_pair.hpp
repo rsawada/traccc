@@ -1,0 +1,133 @@
+/** TRACCC library, part of the ACTS project (R&D line)
+ *
+ * (c) 2026 CERN for the benefit of the ACTS project
+ *
+ * Mozilla Public License Version 2.0
+ */
+
+#pragma once
+
+// Project include(s).
+#include "traccc/definitions/primitives.hpp"
+#include "traccc/definitions/qualifiers.hpp"
+#include "traccc/edm/container.hpp"
+#include "traccc/edm/measurement_collection.hpp"
+
+// Detray include(s).
+#include <detray/geometry/tracking_surface.hpp>
+
+// System include(s).
+#include <cmath>
+#include <cstdint>
+
+namespace traccc {
+
+/// Pair of strip measurements used to form one strip spacepoint.
+struct strip_pair {
+    /// Index of the measurement on the inner surface.
+    unsigned int measurement_index_1;
+    /// Index of the measurement on the outer surface.
+    unsigned int measurement_index_2;
+    /// Surface link of the measurement on the inner surface.
+    std::uint64_t surface_link_1;
+    /// Surface link of the measurement on the outer surface.
+    std::uint64_t surface_link_2;
+    /// Difference between the outer and inner surface radii.
+    scalar surface_delta_r;
+    /// Distance between the selected strip centers in the xy plane.
+    scalar strip_center_delta_xy;
+    /// Signed difference between the selected strip center z coordinates.
+    scalar strip_center_delta_z;
+    /// Dot product of the surface normal vectors.
+    scalar normal_dot;
+};
+
+/// Declare all strip pair collection types.
+using strip_pair_collection_types = collection_types<strip_pair>;
+
+/// Configuration for the initial barrel strip pair search.
+struct strip_pair_config {
+    scalar min_surface_delta_r = 2.f;
+    scalar max_surface_delta_r = 20.f;
+    scalar max_strip_center_delta_xy = 15.f;
+    scalar max_strip_center_delta_z = 5.f;
+    scalar min_normal_dot = 0.995f;
+};
+
+namespace details {
+
+/// Return whether two barrel strip measurements are opposite-pair candidates.
+template <typename detector_t, typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
+    const detector_t& det,
+    const edm::measurement<measurement_backend_t>& inner_measurement,
+    const edm::measurement<measurement_backend_t>& outer_measurement,
+    const strip_pair_config& config) {
+
+    if ((inner_measurement.dimensions() != 1u) ||
+        (outer_measurement.dimensions() != 1u) ||
+        (inner_measurement.surface_link().value() ==
+         outer_measurement.surface_link().value())) {
+        return false;
+    }
+
+    const detray::tracking_surface inner_surface{
+        det, inner_measurement.surface_link()};
+    const detray::tracking_surface outer_surface{
+        det, outer_measurement.surface_link()};
+
+    // The initial implementation handles barrel rectangle surfaces only.
+    if ((static_cast<int>(inner_surface.shape_id()) != 0) ||
+        (static_cast<int>(outer_surface.shape_id()) != 0)) {
+        return false;
+    }
+
+    const point3 inner_surface_center = inner_surface.center({});
+    const point3 outer_surface_center = outer_surface.center({});
+    const scalar inner_surface_r =
+        std::sqrt(inner_surface_center[0] * inner_surface_center[0] +
+                  inner_surface_center[1] * inner_surface_center[1]);
+    const scalar outer_surface_r =
+        std::sqrt(outer_surface_center[0] * outer_surface_center[0] +
+                  outer_surface_center[1] * outer_surface_center[1]);
+    const scalar surface_delta_r = outer_surface_r - inner_surface_r;
+
+    // Only search inner-to-outer pairs. This also avoids duplicate pairs.
+    if ((surface_delta_r < config.min_surface_delta_r) ||
+        (surface_delta_r > config.max_surface_delta_r)) {
+        return false;
+    }
+
+    const point2 inner_local_center{inner_measurement.local_position()[0],
+                                    0.f};
+    const point2 outer_local_center{outer_measurement.local_position()[0],
+                                    0.f};
+    const point3 inner_strip_center =
+        inner_surface.local_to_global({}, inner_local_center, {});
+    const point3 outer_strip_center =
+        outer_surface.local_to_global({}, outer_local_center, {});
+
+    const scalar delta_x = inner_strip_center[0] - outer_strip_center[0];
+    const scalar delta_y = inner_strip_center[1] - outer_strip_center[1];
+    const scalar delta_z = inner_strip_center[2] - outer_strip_center[2];
+    const scalar strip_center_delta_xy =
+        std::sqrt(delta_x * delta_x + delta_y * delta_y);
+
+    if ((strip_center_delta_xy > config.max_strip_center_delta_xy) ||
+        (std::abs(delta_z) > config.max_strip_center_delta_z)) {
+        return false;
+    }
+
+    const vector3 inner_normal =
+        inner_surface.normal({}, inner_measurement.local_position());
+    const vector3 outer_normal =
+        outer_surface.normal({}, outer_measurement.local_position());
+    const scalar normal_dot = inner_normal[0] * outer_normal[0] +
+                              inner_normal[1] * outer_normal[1] +
+                              inner_normal[2] * outer_normal[2];
+
+    return normal_dot > config.min_normal_dot;
+}
+
+}  // namespace details
+}  // namespace traccc
