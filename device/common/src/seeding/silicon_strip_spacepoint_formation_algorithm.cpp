@@ -23,7 +23,9 @@ silicon_strip_spacepoint_formation_algorithm::
 auto silicon_strip_spacepoint_formation_algorithm::operator()(
     const detector_buffer& det,
     const edm::measurement_collection<default_algebra>::const_view&
-        measurements) const -> output_type {
+        measurements,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos) const -> output_type {
 
     // Get the number of measurements. In an asynchronous way if possible.
     edm::measurement_collection<default_algebra>::const_view::size_type
@@ -42,21 +44,33 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
         return {};
     }
 
-    // Count compatible barrel strip measurement pairs on the device.
-    const strip_pair_config pair_config{};
-    vecmem::data::vector_buffer<unsigned int> pair_counter_buffer(1u,
+    // Count compatible strip measurement pairs on the device.
+    const barrel_strip_pair_config barrel_pair_config{};
+    const endcap_strip_pair_config endcap_pair_config{};
+    vecmem::data::vector_buffer<unsigned int> pair_counter_buffer(4u,
                                                                   mr().main);
     copy().setup(pair_counter_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
-    count_strip_pairs_kernel({n_measurements, det, measurements, pair_config,
-                              pair_counter_buffer.ptr()[0]});
+    count_strip_pairs_kernel({n_measurements, det, measurements,
+                              barrel_pair_config, endcap_pair_config,
+                              pair_counter_buffer.ptr()[0],
+                              pair_counter_buffer.ptr()[1],
+                              pair_counter_buffer.ptr()[2],
+                              pair_counter_buffer.ptr()[3]});
 
     // Copy the pair count back to the host before allocating the pair buffer.
     vecmem::vector<unsigned int> pair_counter_host(
         mr().host ? mr().host : &(mr().main));
     copy()(pair_counter_buffer, pair_counter_host)->wait();
     const unsigned int n_pairs = pair_counter_host.at(0);
-    TRACCC_INFO("compatible barrel strip pairs: " << n_pairs);
+    const unsigned int n_barrel_pairs = pair_counter_host.at(1);
+    const unsigned int n_endcap_pairs = pair_counter_host.at(2);
+    const unsigned int n_endcap_boundary_pairs = pair_counter_host.at(3);
+    TRACCC_INFO("compatible strip pairs: " << n_pairs);
+    TRACCC_INFO("compatible barrel strip pairs: " << n_barrel_pairs);
+    TRACCC_INFO("compatible endcap strip pairs: " << n_endcap_pairs);
+    TRACCC_INFO("compatible endcap boundary pairs: "
+                << n_endcap_boundary_pairs);
 
     // Fill the pair buffer using the same search conditions as the count pass.
     if (n_pairs == 0u) {
@@ -65,7 +79,8 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     strip_pair_collection_types::buffer pairs_buffer(n_pairs, mr().main);
     copy().setup(pairs_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
-    find_strip_pairs_kernel({n_measurements, det, measurements, pair_config,
+    find_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
+                             barrel_pair_config, endcap_pair_config,
                              pair_counter_buffer.ptr()[0], pairs_buffer});
 
     // Copy a small sample to the host so the initial thresholds can be
@@ -79,7 +94,8 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
         "strip_pair_candidate_csv,index,measurement_index_1,"
         "measurement_index_2,surface_link_1,surface_link_2,"
         "surface_delta_r,strip_center_delta_xy,strip_center_delta_z,"
-        "normal_dot");
+        "normal_dot,pair_type,is_endcap,surface_mid_r_1,"
+        "surface_mid_r_2");
     for (std::size_t i = 0u; i < n_pairs_to_print; ++i) {
         const strip_pair& pair = pairs_host.at(i);
         TRACCC_INFO("strip_pair_candidate_csv,"
@@ -88,7 +104,11 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
                    << "," << pair.surface_link_2 << ","
                    << pair.surface_delta_r << ","
                    << pair.strip_center_delta_xy << ","
-                   << pair.strip_center_delta_z << "," << pair.normal_dot);
+                   << pair.strip_center_delta_z << "," << pair.normal_dot
+                   << "," << (pair.is_endcap != 0u ? "endcap" : "barrel")
+                   << "," << pair.is_endcap
+                   << "," << pair.surface_mid_r_1
+                   << "," << pair.surface_mid_r_2);
     }
 
     edm::spacepoint_collection::buffer spacepoints(

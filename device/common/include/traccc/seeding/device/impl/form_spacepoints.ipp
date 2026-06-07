@@ -124,8 +124,19 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
     const edm::spacepoint_collection::device::size_type i =
         spacepoints.push_back_default();
     edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
-    traccc::details::fill_barrel_strip_spacepoint(sp, det, first_meas,
-                                                   second_meas);
+
+    const detray::tracking_surface first_surface{det,
+                                                  first_meas.surface_link()};
+    const detray::tracking_surface second_surface{det,
+                                                   second_meas.surface_link()};
+    if ((static_cast<int>(first_surface.shape_id()) == 0) &&
+        (static_cast<int>(second_surface.shape_id()) == 0)) {
+        traccc::details::fill_barrel_strip_spacepoint(sp, det, first_meas,
+                                                       second_meas);
+    } else {
+        traccc::details::fill_endcap_strip_spacepoint(sp, det, first_meas,
+                                                       second_meas);
+    }
     sp.measurement_index_1() = pair.measurement_index_1;
     sp.measurement_index_2() = pair.measurement_index_2;
 }

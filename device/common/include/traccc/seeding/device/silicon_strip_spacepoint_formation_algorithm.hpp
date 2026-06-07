@@ -29,7 +29,8 @@ namespace traccc::device {
 class silicon_strip_spacepoint_formation_algorithm
     : public algorithm<edm::spacepoint_collection::buffer(
           const detector_buffer&,
-          const edm::measurement_collection<default_algebra>::const_view&)>,
+          const edm::measurement_collection<default_algebra>::const_view&,
+          const strip_measurement_surface_info_collection_types::const_view&)>,
       public messaging,
       public algorithm_base {
 
@@ -49,13 +50,16 @@ class silicon_strip_spacepoint_formation_algorithm
     ///
     /// @param det Detector object
     /// @param measurements A collection of measurements
+    /// @param surface_infos Per-measurement strip surface information
     /// @return A spacepoint buffer, with one spacepoint for every
     ///         silicon strip measurement
     ///
     output_type operator()(
         const detector_buffer& det,
         const edm::measurement_collection<default_algebra>::const_view&
-            measurements) const override;
+            measurements,
+        const strip_measurement_surface_info_collection_types::const_view&
+            surface_infos) const override;
 
     protected:
     /// @name Function(s) to be implemented by derived classes
@@ -72,9 +76,17 @@ class silicon_strip_spacepoint_formation_algorithm
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
         /// Configuration for the initial barrel strip pair search.
-        const strip_pair_config& config;
+        const barrel_strip_pair_config& barrel_config;
+        /// Configuration for the initial endcap strip pair search.
+        const endcap_strip_pair_config& endcap_config;
         /// Total number of compatible strip pairs.
         unsigned int& n_pairs;
+        /// Total number of compatible barrel strip pairs.
+        unsigned int& n_barrel_pairs;
+        /// Total number of compatible endcap strip pairs.
+        unsigned int& n_endcap_pairs;
+        /// Total number of compatible endcap pairs with boundary values.
+        unsigned int& n_endcap_boundary_pairs;
     };
 
     /// Launch the strip pair counting kernel.
@@ -91,8 +103,13 @@ class silicon_strip_spacepoint_formation_algorithm
         /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
+        /// Per-measurement strip surface information.
+        const strip_measurement_surface_info_collection_types::const_view&
+            surface_infos;
         /// Configuration for the initial barrel strip pair search.
-        const strip_pair_config& config;
+        const barrel_strip_pair_config& barrel_config;
+        /// Configuration for the initial endcap strip pair search.
+        const endcap_strip_pair_config& endcap_config;
         /// Next position in the output pair buffer.
         unsigned int& pair_position;
         /// Output strip pairs.

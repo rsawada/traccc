@@ -17,13 +17,16 @@
 
 namespace traccc::device {
 
-/// Find barrel strip measurement pairs that can form strip spacepoints.
+/// Find strip measurement pairs that can form strip spacepoints.
 template <typename detector_t>
 TRACCC_HOST_DEVICE inline void find_strip_pairs(
     global_index_t globalIndex, typename detector_t::view det_view,
     const edm::measurement_collection<default_algebra>::const_view&
         measurements_view,
-    const strip_pair_config& config, unsigned int& pair_position,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
+    const barrel_strip_pair_config& barrel_config,
+    const endcap_strip_pair_config& endcap_config, unsigned int& pair_position,
     strip_pair_collection_types::view pairs_view);
 
 }  // namespace traccc::device

@@ -26,11 +26,17 @@ __global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
-    strip_pair_config config, unsigned int& n_pairs)
+    barrel_strip_pair_config barrel_config,
+    endcap_strip_pair_config endcap_config, unsigned int& n_pairs,
+    unsigned int& n_barrel_pairs, unsigned int& n_endcap_pairs,
+    unsigned int& n_endcap_boundary_pairs)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::count_strip_pairs<detector_t>(details::global_index1(), detector,
-                                          measurements, config, n_pairs);
+                                          measurements, barrel_config,
+                                          endcap_config, n_pairs,
+                                          n_barrel_pairs, n_endcap_pairs,
+                                          n_endcap_boundary_pairs);
 }
 
 /// Kernel wrapping @c device::find_strip_pairs.
@@ -39,13 +45,16 @@ __global__ void __launch_bounds__(1024, 1) find_strip_pairs_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
-    strip_pair_config config, unsigned int& pair_position,
+    strip_measurement_surface_info_collection_types::const_view surface_infos,
+    barrel_strip_pair_config barrel_config,
+    endcap_strip_pair_config endcap_config, unsigned int& pair_position,
     strip_pair_collection_types::view pairs)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::find_strip_pairs<detector_t>(details::global_index1(), detector,
-                                         measurements, config, pair_position,
-                                         pairs);
+                                         measurements, surface_infos,
+                                         barrel_config, endcap_config,
+                                         pair_position, pairs);
 }
 
 /// Kernel wrapping @c device::form_barrel_strip_spacepoints.
@@ -83,8 +92,10 @@ void silicon_strip_spacepoint_formation_algorithm::count_strip_pairs_kernel(
                               const typename detector_traits_t::view& det) {
             kernels::count_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
-                    det, payload.measurements, payload.config,
-                    payload.n_pairs);
+                    det, payload.measurements, payload.barrel_config,
+                    payload.endcap_config, payload.n_pairs,
+                    payload.n_barrel_pairs, payload.n_endcap_pairs,
+                    payload.n_endcap_boundary_pairs);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
 }
@@ -100,7 +111,8 @@ void silicon_strip_spacepoint_formation_algorithm::find_strip_pairs_kernel(
                               const typename detector_traits_t::view& det) {
             kernels::find_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
-                    det, payload.measurements, payload.config,
+                    det, payload.measurements, payload.surface_infos,
+                    payload.barrel_config, payload.endcap_config,
                     payload.pair_position, payload.pairs);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());

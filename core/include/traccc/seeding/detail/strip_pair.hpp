@@ -40,17 +40,49 @@ struct strip_pair {
     scalar strip_center_delta_z;
     /// Dot product of the surface normal vectors.
     scalar normal_dot;
+    /// Whether this pair uses endcap strip surface information.
+    unsigned int is_endcap;
+    /// Host-provided midpoint radius of the first strip surface.
+    scalar surface_mid_r_1;
+    /// Host-provided midpoint radius of the second strip surface.
+    scalar surface_mid_r_2;
 };
 
 /// Declare all strip pair collection types.
 using strip_pair_collection_types = collection_types<strip_pair>;
 
+/// Per-measurement strip surface information prepared on the host.
+struct strip_measurement_surface_info {
+    /// Surface link associated with the measurement at the same index.
+    std::uint64_t surface_link;
+    /// Whether this entry corresponds to an endcap strip surface.
+    unsigned int is_endcap;
+    /// Minimum radius from the endcap annulus boundary.
+    scalar min_r;
+    /// Maximum radius from the endcap annulus boundary.
+    scalar max_r;
+    /// Radius used as a pseudo strip midpoint for pair diagnostics.
+    scalar mid_r;
+};
+
+/// Declare all strip measurement surface information collection types.
+using strip_measurement_surface_info_collection_types =
+    collection_types<strip_measurement_surface_info>;
+
 /// Configuration for the initial barrel strip pair search.
-struct strip_pair_config {
+struct barrel_strip_pair_config {
     scalar min_surface_delta_r = 2.f;
     scalar max_surface_delta_r = 20.f;
     scalar max_strip_center_delta_xy = 15.f;
     scalar max_strip_center_delta_z = 5.f;
+    scalar min_normal_dot = 0.995f;
+};
+
+/// Configuration for the initial endcap strip pair search.
+struct endcap_strip_pair_config {
+    scalar min_surface_delta_z = 3.f;
+    scalar max_surface_delta_z = 8.f;
+    scalar max_strip_center_delta_xy = 20.f;
     scalar min_normal_dot = 0.995f;
 };
 
@@ -62,7 +94,7 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
     const detector_t& det,
     const edm::measurement<measurement_backend_t>& inner_measurement,
     const edm::measurement<measurement_backend_t>& outer_measurement,
-    const strip_pair_config& config) {
+    const barrel_strip_pair_config& config) {
 
     if ((inner_measurement.dimensions() != 1u) ||
         (outer_measurement.dimensions() != 1u) ||
@@ -127,6 +159,87 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
                               inner_normal[2] * outer_normal[2];
 
     return normal_dot > config.min_normal_dot;
+}
+
+/// Return whether two endcap strip measurements are pair candidates.
+template <typename detector_t, typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_compatible_endcap_strip_pair(
+    const detector_t& det,
+    const edm::measurement<measurement_backend_t>& first_measurement,
+    const edm::measurement<measurement_backend_t>& second_measurement,
+    const endcap_strip_pair_config& config) {
+
+    if ((first_measurement.dimensions() != 1u) ||
+        (second_measurement.dimensions() != 1u) ||
+        (first_measurement.surface_link().value() ==
+         second_measurement.surface_link().value())) {
+        return false;
+    }
+
+    const detray::tracking_surface first_surface{det,
+                                                 first_measurement.surface_link()};
+    const detray::tracking_surface second_surface{
+        det, second_measurement.surface_link()};
+
+    // Endcap strip modules are represented by annulus-like surfaces.
+    if ((static_cast<int>(first_surface.shape_id()) == 0) ||
+        (static_cast<int>(second_surface.shape_id()) == 0)) {
+        return false;
+    }
+
+    // Endcap strip measurements use the annulus phi-like coordinate.
+    if ((first_measurement.subspace()[0] != 1u) ||
+        (second_measurement.subspace()[0] != 1u)) {
+        return false;
+    }
+
+    const point3 first_center = first_surface.center({});
+    const point3 second_center = second_surface.center({});
+    const scalar surface_delta_z = std::abs(first_center[2] - second_center[2]);
+    if ((surface_delta_z <= config.min_surface_delta_z) ||
+        (surface_delta_z >= config.max_surface_delta_z)) {
+        return false;
+    }
+
+    const vector3 first_normal =
+        first_surface.normal({}, first_measurement.local_position());
+    const vector3 second_normal =
+        second_surface.normal({}, second_measurement.local_position());
+    const scalar normal_dot = first_normal[0] * second_normal[0] +
+                              first_normal[1] * second_normal[1] +
+                              first_normal[2] * second_normal[2];
+    if (normal_dot <= config.min_normal_dot) {
+        return false;
+    }
+
+    // Debug step: do not use boundary() or pseudo-midpoint xy on device.
+    // The host-side cutflow still prints these quantities separately.
+    return true;
+}
+
+/// Return whether two strip measurements are pair candidates.
+template <typename detector_t, typename measurement_backend_t>
+TRACCC_HOST_DEVICE inline bool is_compatible_strip_pair(
+    const detector_t& det,
+    const edm::measurement<measurement_backend_t>& first_measurement,
+    const edm::measurement<measurement_backend_t>& second_measurement,
+    const barrel_strip_pair_config& barrel_config,
+    const endcap_strip_pair_config& endcap_config) {
+
+    const detray::tracking_surface first_surface{det,
+                                                 first_measurement.surface_link()};
+    const detray::tracking_surface second_surface{
+        det, second_measurement.surface_link()};
+
+    if ((static_cast<int>(first_surface.shape_id()) == 0) &&
+        (static_cast<int>(second_surface.shape_id()) == 0)) {
+        return is_compatible_barrel_strip_pair(det, first_measurement,
+                                               second_measurement,
+                                               barrel_config);
+    }
+
+    return is_compatible_endcap_strip_pair(det, first_measurement,
+                                           second_measurement, endcap_config);
 }
 
 }  // namespace details
