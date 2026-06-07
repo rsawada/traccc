@@ -75,6 +75,9 @@ class silicon_strip_spacepoint_formation_algorithm
         /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
+        /// Per-measurement strip surface information.
+        const strip_measurement_surface_info_collection_types::const_view&
+            surface_infos;
         /// Configuration for the initial barrel strip pair search.
         const barrel_strip_pair_config& barrel_config;
         /// Configuration for the initial endcap strip pair search.

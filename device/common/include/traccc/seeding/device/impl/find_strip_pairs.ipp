@@ -84,6 +84,13 @@ TRACCC_HOST_DEVICE inline void find_strip_pairs(
             inner_strip_center[0] - outer_strip_center[0];
         const scalar delta_y =
             inner_strip_center[1] - outer_strip_center[1];
+        const scalar strip_center_delta_xy =
+            std::sqrt(delta_x * delta_x + delta_y * delta_y);
+        if (use_endcap_mid_r &&
+            (strip_center_delta_xy >=
+             endcap_config.max_strip_center_delta_xy)) {
+            continue;
+        }
         const scalar delta_z =
             inner_strip_center[2] - outer_strip_center[2];
         const vector3 inner_normal =
@@ -99,8 +106,7 @@ TRACCC_HOST_DEVICE inline void find_strip_pairs(
                                   inner_measurement.surface_link().value(),
                                   outer_measurement.surface_link().value(),
                                   outer_surface_r - inner_surface_r,
-                                  std::sqrt(delta_x * delta_x +
-                                            delta_y * delta_y),
+                                  strip_center_delta_xy,
                                   delta_z,
                                   inner_normal[0] * outer_normal[0] +
                                       inner_normal[1] * outer_normal[1] +

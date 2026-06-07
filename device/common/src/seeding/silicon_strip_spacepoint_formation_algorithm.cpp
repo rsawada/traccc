@@ -51,7 +51,7 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
                                                                   mr().main);
     copy().setup(pair_counter_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
-    count_strip_pairs_kernel({n_measurements, det, measurements,
+    count_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
                               barrel_pair_config, endcap_pair_config,
                               pair_counter_buffer.ptr()[0],
                               pair_counter_buffer.ptr()[1],

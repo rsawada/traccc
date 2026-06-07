@@ -26,6 +26,7 @@ __global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
+    strip_measurement_surface_info_collection_types::const_view surface_infos,
     barrel_strip_pair_config barrel_config,
     endcap_strip_pair_config endcap_config, unsigned int& n_pairs,
     unsigned int& n_barrel_pairs, unsigned int& n_endcap_pairs,
@@ -33,8 +34,8 @@ __global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::count_strip_pairs<detector_t>(details::global_index1(), detector,
-                                          measurements, barrel_config,
-                                          endcap_config, n_pairs,
+                                          measurements, surface_infos,
+                                          barrel_config, endcap_config, n_pairs,
                                           n_barrel_pairs, n_endcap_pairs,
                                           n_endcap_boundary_pairs);
 }
@@ -92,8 +93,8 @@ void silicon_strip_spacepoint_formation_algorithm::count_strip_pairs_kernel(
                               const typename detector_traits_t::view& det) {
             kernels::count_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
-                    det, payload.measurements, payload.barrel_config,
-                    payload.endcap_config, payload.n_pairs,
+                    det, payload.measurements, payload.surface_infos,
+                    payload.barrel_config, payload.endcap_config, payload.n_pairs,
                     payload.n_barrel_pairs, payload.n_endcap_pairs,
                     payload.n_endcap_boundary_pairs);
         });

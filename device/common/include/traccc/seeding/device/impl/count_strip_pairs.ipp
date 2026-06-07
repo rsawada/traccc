@@ -17,6 +17,8 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
     const global_index_t globalIndex, typename detector_t::view det_view,
     const edm::measurement_collection<default_algebra>::const_view&
         measurements_view,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
     const barrel_strip_pair_config& barrel_config,
     const endcap_strip_pair_config& endcap_config, unsigned int& n_pairs,
     unsigned int& n_barrel_pairs, unsigned int& n_endcap_pairs,
@@ -24,6 +26,8 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
 
     const edm::measurement_collection<default_algebra>::const_device
         measurements(measurements_view);
+    const strip_measurement_surface_info_collection_types::const_device
+        surface_infos(surface_infos_view);
     if (globalIndex >= measurements.size()) {
         return;
     }
@@ -53,17 +57,44 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
             if (details::is_compatible_endcap_strip_pair(
                     det, inner_measurement, outer_measurement,
                     endcap_config)) {
-                ++n_compatible_endcap_pairs;
-                const auto inner_min_r_values = inner_surface.boundary(0u);
-                const auto inner_max_r_values = inner_surface.boundary(1u);
-                const auto outer_min_r_values = outer_surface.boundary(0u);
-                const auto outer_max_r_values = outer_surface.boundary(1u);
-                if (!inner_min_r_values.empty() &&
-                    !inner_max_r_values.empty() &&
-                    !outer_min_r_values.empty() &&
-                    !outer_max_r_values.empty()) {
-                    ++n_compatible_endcap_boundary_pairs;
+                strip_measurement_surface_info inner_info{
+                    inner_measurement.surface_link().value(), 0u, 0.f, 0.f,
+                    0.f};
+                strip_measurement_surface_info outer_info{
+                    outer_measurement.surface_link().value(), 0u, 0.f, 0.f,
+                    0.f};
+                if ((globalIndex < surface_infos.size()) &&
+                    (other_index < surface_infos.size())) {
+                    inner_info = surface_infos.at(globalIndex);
+                    outer_info = surface_infos.at(other_index);
                 }
+
+                if ((inner_info.is_endcap == 0u) ||
+                    (outer_info.is_endcap == 0u)) {
+                    continue;
+                }
+
+                const point2 inner_local_center{
+                    inner_info.mid_r, inner_measurement.local_position()[1]};
+                const point2 outer_local_center{
+                    outer_info.mid_r, outer_measurement.local_position()[1]};
+                const point3 inner_strip_center =
+                    inner_surface.local_to_global({}, inner_local_center, {});
+                const point3 outer_strip_center =
+                    outer_surface.local_to_global({}, outer_local_center, {});
+                const scalar delta_x =
+                    inner_strip_center[0] - outer_strip_center[0];
+                const scalar delta_y =
+                    inner_strip_center[1] - outer_strip_center[1];
+                const scalar strip_center_delta_xy =
+                    std::sqrt(delta_x * delta_x + delta_y * delta_y);
+                if (strip_center_delta_xy >=
+                    endcap_config.max_strip_center_delta_xy) {
+                    continue;
+                }
+
+                ++n_compatible_endcap_pairs;
+                ++n_compatible_endcap_boundary_pairs;
             }
         }
     }
