@@ -195,7 +195,7 @@ TRACCC_HOST_DEVICE inline bool is_compatible_endcap_strip_pair(
 
     const point3 first_center = first_surface.center({});
     const point3 second_center = second_surface.center({});
-    const scalar surface_delta_z = std::abs(first_center[2] - second_center[2]);
+    const scalar surface_delta_z = first_center[2] - second_center[2];
     if ((surface_delta_z <= config.min_surface_delta_z) ||
         (surface_delta_z >= config.max_surface_delta_z)) {
         return false;
