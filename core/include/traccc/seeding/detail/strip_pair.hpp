@@ -71,10 +71,11 @@ using strip_measurement_surface_info_collection_types =
 
 /// Configuration for the initial barrel strip pair search.
 struct barrel_strip_pair_config {
-    scalar min_surface_delta_r = 2.f;
+    scalar max_surface_delta_z = 10.f;
+    scalar min_surface_delta_r = 3.f;
     scalar max_surface_delta_r = 20.f;
-    scalar max_strip_center_delta_xy = 15.f;
-    scalar max_strip_center_delta_z = 5.f;
+    scalar max_strip_center_delta_xy = 20.f;
+    scalar max_strip_center_delta_z = 20.f;
     scalar min_normal_dot = 0.995f;
 };
 
@@ -116,6 +117,12 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
 
     const point3 inner_surface_center = inner_surface.center({});
     const point3 outer_surface_center = outer_surface.center({});
+    const scalar surface_delta_z =
+        std::abs(outer_surface_center[2] - inner_surface_center[2]);
+    if (surface_delta_z >= config.max_surface_delta_z) {
+        return false;
+    }
+
     const scalar inner_surface_r =
         std::sqrt(inner_surface_center[0] * inner_surface_center[0] +
                   inner_surface_center[1] * inner_surface_center[1]);
@@ -125,8 +132,19 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
     const scalar surface_delta_r = outer_surface_r - inner_surface_r;
 
     // Only search inner-to-outer pairs. This also avoids duplicate pairs.
-    if ((surface_delta_r < config.min_surface_delta_r) ||
-        (surface_delta_r > config.max_surface_delta_r)) {
+    if ((surface_delta_r <= config.min_surface_delta_r) ||
+        (surface_delta_r >= config.max_surface_delta_r)) {
+        return false;
+    }
+
+    const vector3 inner_normal =
+        inner_surface.normal({}, inner_measurement.local_position());
+    const vector3 outer_normal =
+        outer_surface.normal({}, outer_measurement.local_position());
+    const scalar normal_dot = inner_normal[0] * outer_normal[0] +
+                              inner_normal[1] * outer_normal[1] +
+                              inner_normal[2] * outer_normal[2];
+    if (normal_dot <= config.min_normal_dot) {
         return false;
     }
 
@@ -150,15 +168,7 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
         return false;
     }
 
-    const vector3 inner_normal =
-        inner_surface.normal({}, inner_measurement.local_position());
-    const vector3 outer_normal =
-        outer_surface.normal({}, outer_measurement.local_position());
-    const scalar normal_dot = inner_normal[0] * outer_normal[0] +
-                              inner_normal[1] * outer_normal[1] +
-                              inner_normal[2] * outer_normal[2];
-
-    return normal_dot > config.min_normal_dot;
+    return true;
 }
 
 /// Return whether two endcap strip measurements are pair candidates.
@@ -195,7 +205,8 @@ TRACCC_HOST_DEVICE inline bool is_compatible_endcap_strip_pair(
 
     const point3 first_center = first_surface.center({});
     const point3 second_center = second_surface.center({});
-    const scalar surface_delta_z = first_center[2] - second_center[2];
+    const scalar surface_delta_z = std::abs(second_center[2]) -
+                                   std::abs(first_center[2]);
     if ((surface_delta_z <= config.min_surface_delta_z) ||
         (surface_delta_z >= config.max_surface_delta_z)) {
         return false;
