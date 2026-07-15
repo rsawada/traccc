@@ -54,6 +54,8 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
     const edm::measurement_collection<default_algebra>::const_view&
         measurements_view,
     const strip_pair_collection_types::const_view& pairs_view,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
     edm::spacepoint_collection::view spacepoints_view);
 
 }  // namespace traccc::device

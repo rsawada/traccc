@@ -59,10 +59,10 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
                     endcap_config)) {
                 strip_measurement_surface_info inner_info{
                     inner_measurement.surface_link().value(), 0u, 0.f, 0.f,
-                    0.f};
+                    0.f, 0.f};
                 strip_measurement_surface_info outer_info{
                     outer_measurement.surface_link().value(), 0u, 0.f, 0.f,
-                    0.f};
+                    0.f, 0.f};
                 if ((globalIndex < surface_infos.size()) &&
                     (other_index < surface_infos.size())) {
                     inner_info = surface_infos.at(globalIndex);

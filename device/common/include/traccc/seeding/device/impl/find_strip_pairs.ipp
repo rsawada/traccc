@@ -57,9 +57,9 @@ TRACCC_HOST_DEVICE inline void find_strip_pairs(
             std::sqrt(outer_surface_center[0] * outer_surface_center[0] +
                       outer_surface_center[1] * outer_surface_center[1]);
         strip_measurement_surface_info inner_info{
-            inner_measurement.surface_link().value(), 0u, 0.f, 0.f, 0.f};
+            inner_measurement.surface_link().value(), 0u, 0.f, 0.f, 0.f, 0.f};
         strip_measurement_surface_info outer_info{
-            outer_measurement.surface_link().value(), 0u, 0.f, 0.f, 0.f};
+            outer_measurement.surface_link().value(), 0u, 0.f, 0.f, 0.f, 0.f};
         if ((globalIndex < surface_infos.size()) &&
             (other_index < surface_infos.size())) {
             inner_info = surface_infos.at(globalIndex);
@@ -93,10 +93,63 @@ TRACCC_HOST_DEVICE inline void find_strip_pairs(
         }
         const scalar delta_z =
             inner_strip_center[2] - outer_strip_center[2];
+        const scalar inner_strip_half_length = inner_info.strip_half_length;
+        const scalar outer_strip_half_length = outer_info.strip_half_length;
         const vector3 inner_normal =
             inner_surface.normal({}, inner_measurement.local_position());
         const vector3 outer_normal =
             outer_surface.normal({}, outer_measurement.local_position());
+
+        scalar strip_length_gap_tolerance = 0.f;
+        const scalar strip_gap_parameter =
+            use_endcap_mid_r ? endcap_config.strip_gap_parameter
+                             : barrel_config.strip_gap_parameter;
+        if (strip_gap_parameter != 0.f) {
+            // Match the offline offset() calculation: T1(?,0) and T2(?,0)
+            // are the local-x axes of the two detector-element transforms,
+            // expressed in global coordinates. They are not the per-strip
+            // local0 probe directions.
+            const vector3 inner_axis = inner_surface.transform({}).x();
+            const vector3 outer_axis = outer_surface.transform({}).x();
+            const scalar inner_axis_norm = std::sqrt(
+                inner_axis[0] * inner_axis[0] + inner_axis[1] * inner_axis[1] +
+                inner_axis[2] * inner_axis[2]);
+            const scalar outer_axis_norm = std::sqrt(
+                outer_axis[0] * outer_axis[0] + outer_axis[1] * outer_axis[1] +
+                outer_axis[2] * outer_axis[2]);
+            if ((inner_axis_norm > 0.f) && (outer_axis_norm > 0.f)) {
+                const scalar x12 =
+                    (inner_axis[0] * outer_axis[0] +
+                     inner_axis[1] * outer_axis[1] +
+                     inner_axis[2] * outer_axis[2]) /
+                    (inner_axis_norm * outer_axis_norm);
+                const scalar s =
+                    (inner_surface_center[0] - outer_surface_center[0]) *
+                        inner_normal[0] +
+                    (inner_surface_center[1] - outer_surface_center[1]) *
+                        inner_normal[1] +
+                    (inner_surface_center[2] - outer_surface_center[2]) *
+                        inner_normal[2];
+                const scalar dm =
+                    strip_gap_parameter * inner_surface_r * std::abs(s * x12);
+
+                if (use_endcap_mid_r) {
+                    strip_length_gap_tolerance = dm / 0.04f;
+                } else {
+                    const scalar denom2 = (1.f - x12) * (1.f + x12);
+                    if (denom2 > 1e-12f) {
+                        strip_length_gap_tolerance = dm / std::sqrt(denom2);
+                    }
+                }
+
+                if ((strip_length_gap_tolerance > 0.f) &&
+                    (std::abs(inner_normal[2]) > 0.7f) &&
+                    (std::abs(inner_surface_center[2]) > 1e-6f)) {
+                    strip_length_gap_tolerance *=
+                        inner_surface_r / std::abs(inner_surface_center[2]);
+                }
+            }
+        }
 
         vecmem::device_atomic_ref<unsigned int> next_position(pair_position);
         const unsigned int position = next_position.fetch_add(1u);
@@ -113,7 +166,10 @@ TRACCC_HOST_DEVICE inline void find_strip_pairs(
                                       inner_normal[2] * outer_normal[2],
                                   use_endcap_mid_r ? 1u : 0u,
                                   inner_info.mid_r,
-                                  outer_info.mid_r};
+                                  outer_info.mid_r,
+                                  inner_strip_half_length,
+                                  outer_strip_half_length,
+                                  strip_length_gap_tolerance};
         }
     }
 }

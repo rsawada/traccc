@@ -46,6 +46,12 @@ struct strip_pair {
     scalar surface_mid_r_1;
     /// Host-provided midpoint radius of the second strip surface.
     scalar surface_mid_r_2;
+    /// Half length of the first strip direction used for the fill.
+    scalar strip_half_length_1;
+    /// Half length of the second strip direction used for the fill.
+    scalar strip_half_length_2;
+    /// G80-like strip-length gap tolerance used for m/n correction.
+    scalar strip_length_gap_tolerance;
 };
 
 /// Declare all strip pair collection types.
@@ -63,6 +69,18 @@ struct strip_measurement_surface_info {
     scalar max_r;
     /// Radius used as a pseudo strip midpoint for pair diagnostics.
     scalar mid_r;
+    /// Strip half length prepared on the host for device-side filling.
+    scalar strip_half_length;
+    /// G80-compatible center of the measured barrel strip.
+    point3 barrel_strip_center;
+    /// G80-compatible, unnormalised barrel strip direction (start - end).
+    vector3 barrel_strip_direction;
+    /// Direction from the beam spot to the strip center, multiplied by two.
+    vector3 barrel_trajectory_direction;
+    /// G80-compatible barrel plane normal, built from the strip and beam spot.
+    vector3 barrel_strip_normal;
+    /// Whether the G80-compatible barrel material is available.
+    unsigned int has_barrel_material;
 };
 
 /// Declare all strip measurement surface information collection types.
@@ -77,6 +95,7 @@ struct barrel_strip_pair_config {
     scalar max_strip_center_delta_xy = 20.f;
     scalar max_strip_center_delta_z = 20.f;
     scalar min_normal_dot = 0.995f;
+    scalar strip_gap_parameter = 0.0015f;
 };
 
 /// Configuration for the initial endcap strip pair search.
@@ -85,6 +104,7 @@ struct endcap_strip_pair_config {
     scalar max_surface_delta_z = 8.f;
     scalar max_strip_center_delta_xy = 20.f;
     scalar min_normal_dot = 0.995f;
+    scalar strip_gap_parameter = 0.0015f;
 };
 
 namespace details {
@@ -170,6 +190,7 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
 
     return true;
 }
+
 
 /// Return whether two endcap strip measurements are pair candidates.
 template <typename detector_t, typename measurement_backend_t>

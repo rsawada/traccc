@@ -104,11 +104,15 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
     const edm::measurement_collection<default_algebra>::const_view&
         measurements_view,
     const strip_pair_collection_types::const_view& pairs_view,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
     edm::spacepoint_collection::view spacepoints_view) {
 
     const edm::measurement_collection<default_algebra>::const_device
         measurements(measurements_view);
     const strip_pair_collection_types::const_device pairs(pairs_view);
+    const strip_measurement_surface_info_collection_types::const_device
+        surface_infos(surface_infos_view);
     if (globalIndex >= pairs.size()) {
         return;
     }
@@ -131,11 +135,34 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
                                                    second_meas.surface_link()};
     if ((static_cast<int>(first_surface.shape_id()) == 0) &&
         (static_cast<int>(second_surface.shape_id()) == 0)) {
-        traccc::details::fill_barrel_strip_spacepoint(sp, det, first_meas,
-                                                       second_meas);
+        const strip_measurement_surface_info first_material =
+            surface_infos.at(pair.measurement_index_1);
+        const strip_measurement_surface_info second_material =
+            surface_infos.at(pair.measurement_index_2);
+        if ((first_material.has_barrel_material != 0u) &&
+            (second_material.has_barrel_material != 0u)) {
+            traccc::details::fill_g80_barrel_strip_spacepoint(
+                sp, first_material.barrel_strip_center,
+                second_material.barrel_strip_center,
+                first_material.barrel_strip_direction,
+                second_material.barrel_strip_direction,
+                first_material.barrel_trajectory_direction,
+                second_material.barrel_trajectory_direction,
+                first_material.barrel_strip_normal,
+                second_material.barrel_strip_normal,
+                first_material.strip_half_length,
+                second_material.strip_half_length);
+        } else {
+            traccc::details::fill_barrel_strip_spacepoint(
+                sp, det, first_meas, second_meas, {},
+                pair.strip_half_length_1, pair.strip_half_length_2,
+                pair.strip_length_gap_tolerance);
+        }
     } else {
-        traccc::details::fill_endcap_strip_spacepoint(sp, det, first_meas,
-                                                       second_meas);
+        traccc::details::fill_endcap_strip_spacepoint(
+            sp, det, first_meas, second_meas, {}, pair.surface_mid_r_1,
+            pair.surface_mid_r_2, pair.strip_half_length_1,
+            pair.strip_half_length_2, pair.strip_length_gap_tolerance);
     }
     sp.measurement_index_1() = pair.measurement_index_1;
     sp.measurement_index_2() = pair.measurement_index_2;

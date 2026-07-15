@@ -95,7 +95,7 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
         "measurement_index_2,surface_link_1,surface_link_2,"
         "surface_delta_r,strip_center_delta_xy,strip_center_delta_z,"
         "normal_dot,pair_type,is_endcap,surface_mid_r_1,"
-        "surface_mid_r_2");
+        "surface_mid_r_2,strip_half_length_1,strip_half_length_2,strip_length_gap_tolerance");
     for (std::size_t i = 0u; i < n_pairs_to_print; ++i) {
         const strip_pair& pair = pairs_host.at(i);
         TRACCC_INFO("strip_pair_candidate_csv,"
@@ -108,14 +108,16 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
                    << "," << (pair.is_endcap != 0u ? "endcap" : "barrel")
                    << "," << pair.is_endcap
                    << "," << pair.surface_mid_r_1
-                   << "," << pair.surface_mid_r_2);
+                   << "," << pair.surface_mid_r_2
+                   << "," << pair.strip_half_length_1
+                   << "," << pair.strip_half_length_2
+                   << "," << pair.strip_length_gap_tolerance);
     }
-
     edm::spacepoint_collection::buffer spacepoints(
         n_pairs, mr().main, vecmem::data::buffer_type::resizable);
     copy().setup(spacepoints)->ignore();
     form_spacepoints_kernel(
-        {n_pairs, det, measurements, pairs_buffer, spacepoints});
+        {n_pairs, det, measurements, pairs_buffer, surface_infos, spacepoints});
 
     // Return the reconstructed spacepoints.
     return spacepoints;

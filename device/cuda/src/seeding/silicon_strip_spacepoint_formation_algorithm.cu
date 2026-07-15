@@ -65,11 +65,13 @@ __global__ void __launch_bounds__(1024, 1) form_barrel_strip_spacepoints_kernel(
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_pair_collection_types::const_view pairs,
+    strip_measurement_surface_info_collection_types::const_view surface_infos,
     edm::spacepoint_collection::view spacepoints)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::form_barrel_strip_spacepoints<detector_t>(
-        details::global_index1(), detector, measurements, pairs, spacepoints);
+        details::global_index1(), detector, measurements, pairs, surface_infos,
+        spacepoints);
 }
 
 }  // namespace kernels
@@ -131,6 +133,7 @@ void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
             kernels::form_barrel_strip_spacepoints_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.pairs,
+                    payload.surface_infos,
                     payload.spacepoints);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());

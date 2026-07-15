@@ -134,6 +134,9 @@ class silicon_strip_spacepoint_formation_algorithm
             measurements;
         /// The compatible barrel strip pairs.
         const strip_pair_collection_types::const_view& pairs;
+        /// Per-measurement strip material prepared on the host.
+        const strip_measurement_surface_info_collection_types::const_view&
+            surface_infos;
         /// The output spacepoints.
         edm::spacepoint_collection::view& spacepoints;
     };

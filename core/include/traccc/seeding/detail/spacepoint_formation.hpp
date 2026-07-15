@@ -49,7 +49,10 @@ TRACCC_HOST_DEVICE inline void fill_barrel_strip_spacepoint(
     edm::spacepoint<spacepoint_backend_t>& sp, const detector_t& det,
     const edm::measurement<measurement_backend_t>& first_meas,
     const edm::measurement<measurement_backend_t>& second_meas,
-    const typename detector_t::geometry_context gctx = {});
+    const typename detector_t::geometry_context gctx = {},
+    const scalar first_half_length = 0.f,
+    const scalar second_half_length = 0.f,
+    const scalar strip_length_gap_tolerance = 0.f);
 
 template <typename spacepoint_backend_t, typename detector_t,
           typename measurement_backend_t>
@@ -57,7 +60,11 @@ TRACCC_HOST_DEVICE inline void fill_endcap_strip_spacepoint(
     edm::spacepoint<spacepoint_backend_t>& sp, const detector_t& det,
     const edm::measurement<measurement_backend_t>& first_meas,
     const edm::measurement<measurement_backend_t>& second_meas,
-    const typename detector_t::geometry_context gctx = {});
+    const typename detector_t::geometry_context gctx = {},
+    const scalar first_mid_r = 0.f, const scalar second_mid_r = 0.f,
+    const scalar first_half_length = 0.f,
+    const scalar second_half_length = 0.f,
+    const scalar strip_length_gap_tolerance = 0.f);
 
 template <typename spacepoint_backend_t, typename detector_t,
           typename measurement_backend_t>
