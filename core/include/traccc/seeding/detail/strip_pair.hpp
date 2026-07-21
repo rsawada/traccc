@@ -81,6 +81,30 @@ struct strip_measurement_surface_info {
     vector3 barrel_strip_normal;
     /// Whether the G80-compatible barrel material is available.
     unsigned int has_barrel_material;
+    /// G80-compatible center of the measured endcap strip.
+    point3 endcap_strip_center;
+    /// G80-compatible, unnormalised endcap strip direction (start - end).
+    vector3 endcap_strip_direction;
+    /// Direction from the beam spot to the endcap strip center, times two.
+    vector3 endcap_trajectory_direction;
+    /// G80-compatible endcap plane normal.
+    vector3 endcap_strip_normal;
+    /// Whether the G80-compatible endcap material is available.
+    unsigned int has_endcap_material;
+    /// G80/Athena surface-frame origin, T(:,3), in global coordinates.
+    point3 surface_origin;
+    /// G80/Athena surface-frame local x axis, T(:,0), in global coordinates.
+    vector3 surface_local_x;
+    /// G80/Athena surface-frame local y axis, T(:,1), in global coordinates.
+    vector3 surface_local_y;
+    /// G80/Athena surface-frame normal, T(:,2), in global coordinates.
+    vector3 surface_normal;
+    /// Radius used by the G80 strip-gap calculation.
+    scalar surface_reference_r;
+    /// Whether the Athena detector element uses an annulus design.
+    unsigned int is_annulus;
+    /// Whether the complete Athena surface frame is available.
+    unsigned int has_surface_frame;
 };
 
 /// Declare all strip measurement surface information collection types.
@@ -89,102 +113,112 @@ using strip_measurement_surface_info_collection_types =
 
 /// Configuration for the initial barrel strip pair search.
 struct barrel_strip_pair_config {
-    scalar max_surface_delta_z = 10.f;
-    scalar min_surface_delta_r = 3.f;
-    scalar max_surface_delta_r = 20.f;
-    scalar max_strip_center_delta_xy = 20.f;
-    scalar max_strip_center_delta_z = 20.f;
-    scalar min_normal_dot = 0.995f;
-    scalar strip_gap_parameter = 0.0015f;
+    scalar max_strip_center_delta_z = 10.f;
+    scalar min_strip_center_delta_r = 3.f;
+    scalar max_strip_center_delta_r = 10.f;
+    scalar max_strip_center_delta_xy = 10.f;
 };
 
 /// Configuration for the initial endcap strip pair search.
 struct endcap_strip_pair_config {
-    scalar min_surface_delta_z = 3.f;
-    scalar max_surface_delta_z = 8.f;
-    scalar max_strip_center_delta_xy = 20.f;
-    scalar min_normal_dot = 0.995f;
-    scalar strip_gap_parameter = 0.0015f;
+    scalar min_strip_center_delta_abs_z = 3.f;
+    scalar max_strip_center_delta_abs_z = 8.f;
+    scalar max_strip_center_delta_xy = 5.f;
 };
 
 namespace details {
 
+/// Reproduce the G80 StripSpacePointFormationTool::offset calculation.
+TRACCC_HOST_DEVICE inline scalar g80_strip_length_gap_tolerance(
+    const strip_measurement_surface_info& first_info,
+    const strip_measurement_surface_info& second_info,
+    const scalar strip_gap_parameter = 0.0015f) {
+
+    if ((first_info.has_surface_frame == 0u) ||
+        (second_info.has_surface_frame == 0u) ||
+        (strip_gap_parameter == 0.f)) {
+        return 0.f;
+    }
+
+    const scalar x12 =
+        first_info.surface_local_x[0] * second_info.surface_local_x[0] +
+        first_info.surface_local_x[1] * second_info.surface_local_x[1] +
+        first_info.surface_local_x[2] * second_info.surface_local_x[2];
+    const scalar delta_origin_x =
+        first_info.surface_origin[0] - second_info.surface_origin[0];
+    const scalar delta_origin_y =
+        first_info.surface_origin[1] - second_info.surface_origin[1];
+    const scalar delta_origin_z =
+        first_info.surface_origin[2] - second_info.surface_origin[2];
+    const scalar surface_separation =
+        delta_origin_x * first_info.surface_normal[0] +
+        delta_origin_y * first_info.surface_normal[1] +
+        delta_origin_z * first_info.surface_normal[2];
+    const scalar dm = strip_gap_parameter * first_info.surface_reference_r *
+                      std::abs(surface_separation * x12);
+
+    scalar tolerance = 0.f;
+    if (first_info.is_annulus != 0u) {
+        tolerance = dm / 0.04f;
+    } else {
+        const scalar denominator2 = (1.f - x12) * (1.f + x12);
+        if (denominator2 > 0.f) {
+            tolerance = dm / std::sqrt(denominator2);
+        }
+    }
+
+    if ((std::abs(first_info.surface_normal[2]) > 0.7f) &&
+        (std::abs(first_info.surface_origin[2]) > 0.f)) {
+        tolerance *= first_info.surface_reference_r /
+                     std::abs(first_info.surface_origin[2]);
+    }
+    return tolerance;
+}
+
 /// Return whether two barrel strip measurements are opposite-pair candidates.
-template <typename detector_t, typename measurement_backend_t>
+template <typename measurement_backend_t>
 TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
-    const detector_t& det,
     const edm::measurement<measurement_backend_t>& inner_measurement,
     const edm::measurement<measurement_backend_t>& outer_measurement,
+    const strip_measurement_surface_info& inner_info,
+    const strip_measurement_surface_info& outer_info,
     const barrel_strip_pair_config& config) {
 
     if ((inner_measurement.dimensions() != 1u) ||
         (outer_measurement.dimensions() != 1u) ||
-        (inner_measurement.surface_link().value() ==
-         outer_measurement.surface_link().value())) {
+        (inner_info.has_barrel_material == 0u) ||
+        (outer_info.has_barrel_material == 0u) ||
+        (inner_info.is_endcap != 0u) || (outer_info.is_endcap != 0u)) {
         return false;
     }
 
-    const detray::tracking_surface inner_surface{
-        det, inner_measurement.surface_link()};
-    const detray::tracking_surface outer_surface{
-        det, outer_measurement.surface_link()};
-
-    // The initial implementation handles barrel rectangle surfaces only.
-    if ((static_cast<int>(inner_surface.shape_id()) != 0) ||
-        (static_cast<int>(outer_surface.shape_id()) != 0)) {
+    const point3& inner_center = inner_info.barrel_strip_center;
+    const point3& outer_center = outer_info.barrel_strip_center;
+    const scalar delta_z = outer_center[2] - inner_center[2];
+    if (std::abs(delta_z) >= config.max_strip_center_delta_z) {
         return false;
     }
 
-    const point3 inner_surface_center = inner_surface.center({});
-    const point3 outer_surface_center = outer_surface.center({});
-    const scalar surface_delta_z =
-        std::abs(outer_surface_center[2] - inner_surface_center[2]);
-    if (surface_delta_z >= config.max_surface_delta_z) {
-        return false;
-    }
-
-    const scalar inner_surface_r =
-        std::sqrt(inner_surface_center[0] * inner_surface_center[0] +
-                  inner_surface_center[1] * inner_surface_center[1]);
-    const scalar outer_surface_r =
-        std::sqrt(outer_surface_center[0] * outer_surface_center[0] +
-                  outer_surface_center[1] * outer_surface_center[1]);
-    const scalar surface_delta_r = outer_surface_r - inner_surface_r;
+    const scalar inner_r =
+        std::sqrt(inner_center[0] * inner_center[0] +
+                  inner_center[1] * inner_center[1]);
+    const scalar outer_r =
+        std::sqrt(outer_center[0] * outer_center[0] +
+                  outer_center[1] * outer_center[1]);
+    const scalar delta_r = outer_r - inner_r;
 
     // Only search inner-to-outer pairs. This also avoids duplicate pairs.
-    if ((surface_delta_r <= config.min_surface_delta_r) ||
-        (surface_delta_r >= config.max_surface_delta_r)) {
+    if ((delta_r <= config.min_strip_center_delta_r) ||
+        (delta_r >= config.max_strip_center_delta_r)) {
         return false;
     }
 
-    const vector3 inner_normal =
-        inner_surface.normal({}, inner_measurement.local_position());
-    const vector3 outer_normal =
-        outer_surface.normal({}, outer_measurement.local_position());
-    const scalar normal_dot = inner_normal[0] * outer_normal[0] +
-                              inner_normal[1] * outer_normal[1] +
-                              inner_normal[2] * outer_normal[2];
-    if (normal_dot <= config.min_normal_dot) {
-        return false;
-    }
-
-    const point2 inner_local_center{inner_measurement.local_position()[0],
-                                    0.f};
-    const point2 outer_local_center{outer_measurement.local_position()[0],
-                                    0.f};
-    const point3 inner_strip_center =
-        inner_surface.local_to_global({}, inner_local_center, {});
-    const point3 outer_strip_center =
-        outer_surface.local_to_global({}, outer_local_center, {});
-
-    const scalar delta_x = inner_strip_center[0] - outer_strip_center[0];
-    const scalar delta_y = inner_strip_center[1] - outer_strip_center[1];
-    const scalar delta_z = inner_strip_center[2] - outer_strip_center[2];
-    const scalar strip_center_delta_xy =
-        std::sqrt(delta_x * delta_x + delta_y * delta_y);
-
-    if ((strip_center_delta_xy > config.max_strip_center_delta_xy) ||
-        (std::abs(delta_z) > config.max_strip_center_delta_z)) {
+    const scalar delta_x = outer_center[0] - inner_center[0];
+    const scalar delta_y = outer_center[1] - inner_center[1];
+    const scalar delta_xy2 = delta_x * delta_x + delta_y * delta_y;
+    const scalar max_delta_xy2 = config.max_strip_center_delta_xy *
+                                 config.max_strip_center_delta_xy;
+    if (delta_xy2 >= max_delta_xy2) {
         return false;
     }
 
@@ -193,85 +227,48 @@ TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
 
 
 /// Return whether two endcap strip measurements are pair candidates.
-template <typename detector_t, typename measurement_backend_t>
+template <typename measurement_backend_t>
 TRACCC_HOST_DEVICE inline bool is_compatible_endcap_strip_pair(
-    const detector_t& det,
     const edm::measurement<measurement_backend_t>& first_measurement,
     const edm::measurement<measurement_backend_t>& second_measurement,
+    const strip_measurement_surface_info& first_info,
+    const strip_measurement_surface_info& second_info,
     const endcap_strip_pair_config& config) {
 
     if ((first_measurement.dimensions() != 1u) ||
         (second_measurement.dimensions() != 1u) ||
-        (first_measurement.surface_link().value() ==
-         second_measurement.surface_link().value())) {
+        (first_info.is_endcap == 0u) || (second_info.is_endcap == 0u) ||
+        (first_info.has_endcap_material == 0u) ||
+        (second_info.has_endcap_material == 0u)) {
         return false;
     }
 
-    const detray::tracking_surface first_surface{det,
-                                                 first_measurement.surface_link()};
-    const detray::tracking_surface second_surface{
-        det, second_measurement.surface_link()};
+    const point3& first_center = first_info.endcap_strip_center;
+    const point3& second_center = second_info.endcap_strip_center;
 
-    // Endcap strip modules are represented by annulus-like surfaces.
-    if ((static_cast<int>(first_surface.shape_id()) == 0) ||
-        (static_cast<int>(second_surface.shape_id()) == 0)) {
+    // Require both strips to be on the same endcap side.
+    if (first_center[2] * second_center[2] <= 0.f) {
         return false;
     }
 
-    // Endcap strip measurements use the annulus phi-like coordinate.
-    if ((first_measurement.subspace()[0] != 1u) ||
-        (second_measurement.subspace()[0] != 1u)) {
+    // Search from smaller to larger absolute z to avoid duplicate pairs.
+    const scalar delta_abs_z =
+        std::abs(second_center[2]) - std::abs(first_center[2]);
+    if ((delta_abs_z <= config.min_strip_center_delta_abs_z) ||
+        (delta_abs_z >= config.max_strip_center_delta_abs_z)) {
         return false;
     }
 
-    const point3 first_center = first_surface.center({});
-    const point3 second_center = second_surface.center({});
-    const scalar surface_delta_z = std::abs(second_center[2]) -
-                                   std::abs(first_center[2]);
-    if ((surface_delta_z <= config.min_surface_delta_z) ||
-        (surface_delta_z >= config.max_surface_delta_z)) {
+    const scalar delta_x = second_center[0] - first_center[0];
+    const scalar delta_y = second_center[1] - first_center[1];
+    const scalar delta_xy2 = delta_x * delta_x + delta_y * delta_y;
+    const scalar max_delta_xy2 = config.max_strip_center_delta_xy *
+                                 config.max_strip_center_delta_xy;
+    if (delta_xy2 >= max_delta_xy2) {
         return false;
     }
 
-    const vector3 first_normal =
-        first_surface.normal({}, first_measurement.local_position());
-    const vector3 second_normal =
-        second_surface.normal({}, second_measurement.local_position());
-    const scalar normal_dot = first_normal[0] * second_normal[0] +
-                              first_normal[1] * second_normal[1] +
-                              first_normal[2] * second_normal[2];
-    if (normal_dot <= config.min_normal_dot) {
-        return false;
-    }
-
-    // Debug step: do not use boundary() or pseudo-midpoint xy on device.
-    // The host-side cutflow still prints these quantities separately.
     return true;
-}
-
-/// Return whether two strip measurements are pair candidates.
-template <typename detector_t, typename measurement_backend_t>
-TRACCC_HOST_DEVICE inline bool is_compatible_strip_pair(
-    const detector_t& det,
-    const edm::measurement<measurement_backend_t>& first_measurement,
-    const edm::measurement<measurement_backend_t>& second_measurement,
-    const barrel_strip_pair_config& barrel_config,
-    const endcap_strip_pair_config& endcap_config) {
-
-    const detray::tracking_surface first_surface{det,
-                                                 first_measurement.surface_link()};
-    const detray::tracking_surface second_surface{
-        det, second_measurement.surface_link()};
-
-    if ((static_cast<int>(first_surface.shape_id()) == 0) &&
-        (static_cast<int>(second_surface.shape_id()) == 0)) {
-        return is_compatible_barrel_strip_pair(det, first_measurement,
-                                               second_measurement,
-                                               barrel_config);
-    }
-
-    return is_compatible_endcap_strip_pair(det, first_measurement,
-                                           second_measurement, endcap_config);
 }
 
 }  // namespace details

@@ -28,11 +28,11 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
         measurements(measurements_view);
     const strip_measurement_surface_info_collection_types::const_device
         surface_infos(surface_infos_view);
+    (void)det_view;
     if (globalIndex >= measurements.size()) {
         return;
     }
 
-    typename detector_t::device det(det_view);
     const edm::measurement inner_measurement = measurements.at(globalIndex);
     unsigned int n_compatible_barrel_pairs = 0u;
     unsigned int n_compatible_endcap_pairs = 0u;
@@ -40,59 +40,31 @@ TRACCC_HOST_DEVICE inline void count_strip_pairs(
 
     for (unsigned int other_index = 0u; other_index < measurements.size();
          ++other_index) {
-        const edm::measurement outer_measurement = measurements.at(other_index);
-        const detray::tracking_surface inner_surface{
-            det, inner_measurement.surface_link()};
-        const detray::tracking_surface outer_surface{
-            det, outer_measurement.surface_link()};
+        if (other_index == globalIndex) {
+            continue;
+        }
 
-        if ((static_cast<int>(inner_surface.shape_id()) == 0) &&
-            (static_cast<int>(outer_surface.shape_id()) == 0)) {
+        const edm::measurement outer_measurement = measurements.at(other_index);
+        strip_measurement_surface_info inner_info{};
+        strip_measurement_surface_info outer_info{};
+        if ((globalIndex < surface_infos.size()) &&
+            (other_index < surface_infos.size())) {
+            inner_info = surface_infos.at(globalIndex);
+            outer_info = surface_infos.at(other_index);
+        }
+
+        if ((inner_info.has_barrel_material != 0u) &&
+            (outer_info.has_barrel_material != 0u)) {
             if (details::is_compatible_barrel_strip_pair(
-                    det, inner_measurement, outer_measurement,
-                    barrel_config)) {
+                    inner_measurement, outer_measurement, inner_info,
+                    outer_info, barrel_config)) {
                 ++n_compatible_barrel_pairs;
             }
-        } else {
+        } else if ((inner_info.has_endcap_material != 0u) &&
+                   (outer_info.has_endcap_material != 0u)) {
             if (details::is_compatible_endcap_strip_pair(
-                    det, inner_measurement, outer_measurement,
-                    endcap_config)) {
-                strip_measurement_surface_info inner_info{
-                    inner_measurement.surface_link().value(), 0u, 0.f, 0.f,
-                    0.f, 0.f};
-                strip_measurement_surface_info outer_info{
-                    outer_measurement.surface_link().value(), 0u, 0.f, 0.f,
-                    0.f, 0.f};
-                if ((globalIndex < surface_infos.size()) &&
-                    (other_index < surface_infos.size())) {
-                    inner_info = surface_infos.at(globalIndex);
-                    outer_info = surface_infos.at(other_index);
-                }
-
-                if ((inner_info.is_endcap == 0u) ||
-                    (outer_info.is_endcap == 0u)) {
-                    continue;
-                }
-
-                const point2 inner_local_center{
-                    inner_info.mid_r, inner_measurement.local_position()[1]};
-                const point2 outer_local_center{
-                    outer_info.mid_r, outer_measurement.local_position()[1]};
-                const point3 inner_strip_center =
-                    inner_surface.local_to_global({}, inner_local_center, {});
-                const point3 outer_strip_center =
-                    outer_surface.local_to_global({}, outer_local_center, {});
-                const scalar delta_x =
-                    inner_strip_center[0] - outer_strip_center[0];
-                const scalar delta_y =
-                    inner_strip_center[1] - outer_strip_center[1];
-                const scalar strip_center_delta_xy =
-                    std::sqrt(delta_x * delta_x + delta_y * delta_y);
-                if (strip_center_delta_xy >=
-                    endcap_config.max_strip_center_delta_xy) {
-                    continue;
-                }
-
+                    inner_measurement, outer_measurement, inner_info,
+                    outer_info, endcap_config)) {
                 ++n_compatible_endcap_pairs;
                 ++n_compatible_endcap_boundary_pairs;
             }

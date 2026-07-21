@@ -125,25 +125,22 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
     const edm::measurement second_meas =
         measurements.at(pair.measurement_index_2);
 
-    const edm::spacepoint_collection::device::size_type i =
-        spacepoints.push_back_default();
-    edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
-
-    const detray::tracking_surface first_surface{det,
-                                                  first_meas.surface_link()};
-    const detray::tracking_surface second_surface{det,
-                                                   second_meas.surface_link()};
-    if ((static_cast<int>(first_surface.shape_id()) == 0) &&
-        (static_cast<int>(second_surface.shape_id()) == 0)) {
-        const strip_measurement_surface_info first_material =
-            surface_infos.at(pair.measurement_index_1);
-        const strip_measurement_surface_info second_material =
-            surface_infos.at(pair.measurement_index_2);
+    const strip_measurement_surface_info first_material =
+        surface_infos.at(pair.measurement_index_1);
+    const strip_measurement_surface_info second_material =
+        surface_infos.at(pair.measurement_index_2);
+    const scalar strip_length_gap_tolerance =
+        details::g80_strip_length_gap_tolerance(first_material,
+                                                second_material);
+    point3 g80_spacepoint{};
+    bool use_g80_spacepoint = false;
+    bool accepted = true;
+    if (pair.is_endcap == 0u) {
         if ((first_material.has_barrel_material != 0u) &&
             (second_material.has_barrel_material != 0u)) {
-            traccc::details::fill_g80_barrel_strip_spacepoint(
-                sp, first_material.barrel_strip_center,
-                second_material.barrel_strip_center,
+            use_g80_spacepoint = true;
+            accepted = traccc::details::make_g80_strip_spacepoint(
+                g80_spacepoint, first_material.barrel_strip_center,
                 first_material.barrel_strip_direction,
                 second_material.barrel_strip_direction,
                 first_material.barrel_trajectory_direction,
@@ -151,18 +148,49 @@ TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
                 first_material.barrel_strip_normal,
                 second_material.barrel_strip_normal,
                 first_material.strip_half_length,
-                second_material.strip_half_length);
-        } else {
-            traccc::details::fill_barrel_strip_spacepoint(
-                sp, det, first_meas, second_meas, {},
-                pair.strip_half_length_1, pair.strip_half_length_2,
-                pair.strip_length_gap_tolerance);
+                second_material.strip_half_length,
+                strip_length_gap_tolerance);
         }
+    } else {
+        if ((first_material.has_endcap_material != 0u) &&
+            (second_material.has_endcap_material != 0u)) {
+            use_g80_spacepoint = true;
+            accepted = traccc::details::make_g80_strip_spacepoint(
+                g80_spacepoint, first_material.endcap_strip_center,
+                first_material.endcap_strip_direction,
+                second_material.endcap_strip_direction,
+                first_material.endcap_trajectory_direction,
+                second_material.endcap_trajectory_direction,
+                first_material.endcap_strip_normal,
+                second_material.endcap_strip_normal,
+                first_material.strip_half_length,
+                second_material.strip_half_length,
+                strip_length_gap_tolerance);
+        }
+    }
+
+    if (!accepted) {
+        return;
+    }
+
+    const edm::spacepoint_collection::device::size_type i =
+        spacepoints.push_back_default();
+    edm::spacepoint_collection::device::proxy_type sp = spacepoints.at(i);
+    if (use_g80_spacepoint) {
+        sp.x() = g80_spacepoint[0];
+        sp.y() = g80_spacepoint[1];
+        sp.z() = g80_spacepoint[2];
+        sp.radius_variance() = 0.f;
+        sp.z_variance() = 0.f;
+    } else if (pair.is_endcap == 0u) {
+        traccc::details::fill_barrel_strip_spacepoint(
+            sp, det, first_meas, second_meas, {}, pair.strip_half_length_1,
+            pair.strip_half_length_2, strip_length_gap_tolerance);
     } else {
         traccc::details::fill_endcap_strip_spacepoint(
             sp, det, first_meas, second_meas, {}, pair.surface_mid_r_1,
             pair.surface_mid_r_2, pair.strip_half_length_1,
-            pair.strip_half_length_2, pair.strip_length_gap_tolerance);
+            pair.strip_half_length_2, strip_length_gap_tolerance);
     }
     sp.measurement_index_1() = pair.measurement_index_1;
     sp.measurement_index_2() = pair.measurement_index_2;

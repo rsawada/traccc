@@ -58,67 +58,78 @@ TRACCC_HOST_DEVICE inline scalar clamp_scalar(const scalar value,
     return value < lo ? lo : (value > hi ? hi : value);
 }
 
-/// Fill a barrel strip spacepoint using the same line/plane parameterisation
-/// as the G80 offline strip spacepoint implementation.
-template <typename spacepoint_backend_t>
-TRACCC_HOST_DEVICE inline void fill_g80_barrel_strip_spacepoint(
-    edm::spacepoint<spacepoint_backend_t>& sp, const point3& first_center,
-    const point3& second_center, const vector3& first_direction,
-    const vector3& second_direction, const vector3& first_trajectory,
+/// Calculate a strip spacepoint using the same cuts and line/plane
+/// parameterisation as the G80 offline strip spacepoint implementation.
+TRACCC_HOST_DEVICE inline bool make_g80_strip_spacepoint(
+    point3& spacepoint, const point3& first_center,
+    const vector3& first_direction, const vector3& second_direction,
+    const vector3& first_trajectory,
     const vector3& second_trajectory, const vector3& first_normal,
     const vector3& second_normal, const scalar first_half_length,
-    const scalar second_half_length) {
+    const scalar second_half_length,
+    const scalar strip_length_gap_tolerance) {
 
+    constexpr scalar strip_length_limit = 1.01f;
     const scalar first_denominator = dot3(first_direction, second_normal);
     const scalar second_denominator = dot3(second_direction, first_normal);
-    if ((std::abs(first_denominator) < 1e-12f) ||
+    if ((first_half_length <= 0.f) || (second_half_length <= 0.f) ||
+        (std::abs(first_denominator) < 1e-12f) ||
         (std::abs(second_denominator) < 1e-12f)) {
-        sp.x() = 0.5f * (first_center[0] + second_center[0]);
-        sp.y() = 0.5f * (first_center[1] + second_center[1]);
-        sp.z() = 0.5f * (first_center[2] + second_center[2]);
-        sp.radius_variance() = 0.f;
-        sp.z_variance() = 0.f;
-        return;
+        return false;
     }
 
-    scalar m = -dot3(first_trajectory, second_normal) / first_denominator;
-    scalar n = -dot3(second_trajectory, first_normal) / second_denominator;
+    const scalar a = -dot3(first_trajectory, second_normal);
+    const scalar c = -dot3(second_trajectory, first_normal);
+    const scalar first_one_over_strip = 0.5f / first_half_length;
+    const scalar second_one_over_strip = 0.5f / second_half_length;
+    const scalar first_pre_cut = strip_length_limit +
+                                 first_one_over_strip *
+                                     strip_length_gap_tolerance;
+    const scalar second_pre_cut = strip_length_limit +
+                                  second_one_over_strip *
+                                      strip_length_gap_tolerance;
 
-    // G80 couples the endpoint correction on both strips. The slimit-based
-    // pre-cut is intentionally omitted here; only the m/n correction is used.
-    constexpr scalar strip_length_limit = 1.01f;
-    if ((first_half_length > 0.f) && (second_half_length > 0.f)) {
-        const scalar first_one_over_strip = 0.5f / first_half_length;
+    if ((std::abs(a) > std::abs(first_denominator) * first_pre_cut) ||
+        (std::abs(c) > std::abs(second_denominator) * second_pre_cut)) {
+        return false;
+    }
+
+    scalar m = a / first_denominator;
+    scalar n = c / second_denominator;
+
+    if (strip_length_gap_tolerance != 0.f) {
         const scalar cs = dot3(first_direction, second_direction) *
                           first_one_over_strip * first_one_over_strip;
-        if (std::abs(cs) > 1e-12f) {
-            if ((m > strip_length_limit) || (n > strip_length_limit)) {
-                scalar dm = m - 1.f;
-                const scalar dmn = (n - 1.f) * cs;
-                if (dmn > dm) {
-                    dm = dmn;
-                }
-                m -= dm;
-                n -= dm / cs;
-            } else if ((m < -strip_length_limit) ||
-                       (n < -strip_length_limit)) {
-                scalar dm = -(1.f + m);
-                const scalar dmn = -(1.f + n) * cs;
-                if (dmn > dm) {
-                    dm = dmn;
-                }
-                m += dm;
-                n += dm / cs;
+        if (std::abs(cs) < 1e-12f) {
+            return false;
+        }
+        if ((m > strip_length_limit) || (n > strip_length_limit)) {
+            scalar dm = m - 1.f;
+            const scalar dmn = (n - 1.f) * cs;
+            if (dmn > dm) {
+                dm = dmn;
             }
+            m -= dm;
+            n -= dm / cs;
+        } else if ((m < -strip_length_limit) ||
+                   (n < -strip_length_limit)) {
+            scalar dm = -(1.f + m);
+            const scalar dmn = -(1.f + n) * cs;
+            if (dmn > dm) {
+                dm = dmn;
+            }
+            m += dm;
+            n += dm / cs;
+        }
+
+        if ((std::abs(m) > strip_length_limit) ||
+            (std::abs(n) > strip_length_limit)) {
+            return false;
         }
     }
 
-    const point3 spacepoint = first_center + (0.5f * m) * first_direction;
-    sp.x() = spacepoint[0];
-    sp.y() = spacepoint[1];
-    sp.z() = spacepoint[2];
-    sp.radius_variance() = 0.f;
-    sp.z_variance() = 0.f;
+    spacepoint = first_center + (0.5f * m) * first_direction;
+    return true;
 }
 
 template <typename spacepoint_backend_t>
