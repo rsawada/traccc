@@ -7,30 +7,23 @@
 
 #pragma once
 
-// Local include(s).
 #include "traccc/device/global_index.hpp"
-
-// Project include(s).
 #include "traccc/definitions/qualifiers.hpp"
 #include "traccc/edm/measurement_collection.hpp"
 #include "traccc/seeding/detail/strip_pair.hpp"
 
+#include <vecmem/containers/data/vector_view.hpp>
+
 namespace traccc::device {
 
-/// Count strip measurement pairs that can form strip spacepoints.
 template <typename detector_t>
 TRACCC_HOST_DEVICE inline void count_strip_pairs(
     global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view&
-        measurements_view,
-    const strip_measurement_surface_info_collection_types::const_view&
-        surface_infos_view,
-    const barrel_strip_pair_config& barrel_config,
-    const endcap_strip_pair_config& endcap_config, unsigned int& n_pairs,
-    unsigned int& n_barrel_pairs, unsigned int& n_endcap_pairs,
-    unsigned int& n_endcap_boundary_pairs);
+    const edm::measurement_collection<default_algebra>::const_view& measurements_view,
+    const strip_measurement_surface_info_collection_types::const_view& surface_infos_view,
+    const vecmem::data::vector_view<unsigned int>& candidate_indices_view,
+    unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs);
 
 }  // namespace traccc::device
 
-// Include the implementation.
 #include "traccc/seeding/device/impl/count_strip_pairs.ipp"

@@ -19,7 +19,15 @@
 #include "traccc/utils/memory_resource.hpp"
 #include "traccc/utils/messaging.hpp"
 
+#include <vecmem/containers/data/vector_view.hpp>
+
 namespace traccc::device {
+
+/// Separate standard (opposite-side) and overlap strip spacepoints.
+struct strip_spacepoint_formation_output {
+    edm::spacepoint_collection::buffer spacepoints;
+    edm::spacepoint_collection::buffer overlap_spacepoints;
+};
 
 /// Algorithm forming space points out of measurements
 ///
@@ -27,10 +35,11 @@ namespace traccc::device {
 /// measurements made on every detector module, into 3D spacepoint coordinates.
 ///
 class silicon_strip_spacepoint_formation_algorithm
-    : public algorithm<edm::spacepoint_collection::buffer(
+    : public algorithm<strip_spacepoint_formation_output(
           const detector_buffer&,
           const edm::measurement_collection<default_algebra>::const_view&,
-          const strip_measurement_surface_info_collection_types::const_view&)>,
+          const strip_measurement_surface_info_collection_types::const_view&,
+          const vecmem::data::vector_view<unsigned int>&)>,
       public messaging,
       public algorithm_base {
 
@@ -59,7 +68,8 @@ class silicon_strip_spacepoint_formation_algorithm
         const edm::measurement_collection<default_algebra>::const_view&
             measurements,
         const strip_measurement_surface_info_collection_types::const_view&
-            surface_infos) const override;
+            surface_infos,
+        const vecmem::data::vector_view<unsigned int>& candidate_indices) const override;
 
     protected:
     /// @name Function(s) to be implemented by derived classes
@@ -78,18 +88,12 @@ class silicon_strip_spacepoint_formation_algorithm
         /// Per-measurement strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
-        /// Configuration for the initial barrel strip pair search.
-        const barrel_strip_pair_config& barrel_config;
-        /// Configuration for the initial endcap strip pair search.
-        const endcap_strip_pair_config& endcap_config;
-        /// Total number of compatible strip pairs.
-        unsigned int& n_pairs;
-        /// Total number of compatible barrel strip pairs.
-        unsigned int& n_barrel_pairs;
-        /// Total number of compatible endcap strip pairs.
-        unsigned int& n_endcap_pairs;
-        /// Total number of compatible endcap pairs with boundary values.
-        unsigned int& n_endcap_boundary_pairs;
+        /// Measurement indices on opposite and neighbouring surfaces.
+        const vecmem::data::vector_view<unsigned int>& candidate_indices;
+        /// Number of opposite-side strip pairs.
+        unsigned int& n_opposite_pairs;
+        /// Number of overlap strip pairs.
+        unsigned int& n_overlap_pairs;
     };
 
     /// Launch the strip pair counting kernel.
@@ -109,14 +113,14 @@ class silicon_strip_spacepoint_formation_algorithm
         /// Per-measurement strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
-        /// Configuration for the initial barrel strip pair search.
-        const barrel_strip_pair_config& barrel_config;
-        /// Configuration for the initial endcap strip pair search.
-        const endcap_strip_pair_config& endcap_config;
-        /// Next position in the output pair buffer.
-        unsigned int& pair_position;
-        /// Output strip pairs.
-        strip_pair_collection_types::view& pairs;
+        /// Measurement indices on opposite and neighbouring surfaces.
+        const vecmem::data::vector_view<unsigned int>& candidate_indices;
+        /// Next positions in the two output pair buffers.
+        unsigned int& opposite_position;
+        unsigned int& overlap_position;
+        /// Opposite-side and overlap strip pairs.
+        strip_pair_collection_types::view& opposite_pairs;
+        strip_pair_collection_types::view& overlap_pairs;
     };
 
     /// Launch the strip pair finding kernel.

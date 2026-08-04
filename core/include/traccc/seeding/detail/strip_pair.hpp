@@ -22,6 +22,18 @@
 
 namespace traccc {
 
+/// Relationship between the reference and candidate strip surfaces.
+enum class strip_pair_relation : unsigned int {
+    none = 0u,
+    opposite = 1u,
+    eta_minus = 2u,
+    eta_plus = 3u,
+    phi_minus = 4u,
+    phi_plus = 5u
+};
+
+inline constexpr std::uint64_t invalid_strip_surface_link = UINT64_MAX;
+
 /// Pair of strip measurements used to form one strip spacepoint.
 struct strip_pair {
     /// Index of the measurement on the inner surface.
@@ -105,6 +117,39 @@ struct strip_measurement_surface_info {
     unsigned int is_annulus;
     /// Whether the complete Athena surface frame is available.
     unsigned int has_surface_frame;
+    /// Active local coordinate used by the offline strip pairing.
+    scalar active_local;
+    /// Strip index used for ITk endcap phi-overlap matching.
+    scalar strip_index;
+    /// Signed barrel/endcap identifier (-2, 0, or +2).
+    int barrel_ec;
+    /// Whether this surface is the non-stereo reference side.
+    unsigned int is_reference_surface;
+    /// Detray surface links of the offline module relationships.
+    std::uint64_t opposite_surface_link;
+    std::uint64_t eta_minus_surface_link;
+    std::uint64_t eta_plus_surface_link;
+    std::uint64_t phi_minus_surface_link;
+    std::uint64_t phi_plus_surface_link;
+    /// Final offline compatibility ranges for opposite and eta neighbours.
+    scalar opposite_min;
+    scalar opposite_max;
+    scalar eta_minus_min;
+    scalar eta_minus_max;
+    scalar eta_plus_min;
+    scalar eta_plus_max;
+    /// Final offline edge ranges for the reference and phi neighbour.
+    scalar phi_minus_reference_min;
+    scalar phi_minus_reference_max;
+    scalar phi_minus_candidate_min;
+    scalar phi_minus_candidate_max;
+    scalar phi_plus_reference_min;
+    scalar phi_plus_reference_max;
+    scalar phi_plus_candidate_min;
+    scalar phi_plus_candidate_max;
+    /// Range in the flattened list of measurements on related surfaces.
+    unsigned int candidate_measurement_begin;
+    unsigned int candidate_measurement_count;
 };
 
 /// Declare all strip measurement surface information collection types.
@@ -175,100 +220,90 @@ TRACCC_HOST_DEVICE inline scalar g80_strip_length_gap_tolerance(
     return tolerance;
 }
 
-/// Return whether two barrel strip measurements are opposite-pair candidates.
+/// Return the offline relationship if two strip measurements are compatible.
 template <typename measurement_backend_t>
-TRACCC_HOST_DEVICE inline bool is_compatible_barrel_strip_pair(
-    const edm::measurement<measurement_backend_t>& inner_measurement,
-    const edm::measurement<measurement_backend_t>& outer_measurement,
-    const strip_measurement_surface_info& inner_info,
-    const strip_measurement_surface_info& outer_info,
-    const barrel_strip_pair_config& config) {
+TRACCC_HOST_DEVICE inline strip_pair_relation match_offline_strip_pair(
+    const edm::measurement<measurement_backend_t>& reference_measurement,
+    const edm::measurement<measurement_backend_t>& candidate_measurement,
+    const strip_measurement_surface_info& reference_info,
+    const strip_measurement_surface_info& candidate_info) {
 
-    if ((inner_measurement.dimensions() != 1u) ||
-        (outer_measurement.dimensions() != 1u) ||
-        (inner_info.has_barrel_material == 0u) ||
-        (outer_info.has_barrel_material == 0u) ||
-        (inner_info.is_endcap != 0u) || (outer_info.is_endcap != 0u)) {
-        return false;
+    if ((reference_measurement.dimensions() != 1u) ||
+        (candidate_measurement.dimensions() != 1u) ||
+        (reference_info.is_reference_surface == 0u) ||
+        (reference_info.is_endcap != candidate_info.is_endcap) ||
+        ((reference_info.has_barrel_material == 0u) &&
+         (reference_info.has_endcap_material == 0u)) ||
+        ((candidate_info.has_barrel_material == 0u) &&
+         (candidate_info.has_endcap_material == 0u))) {
+        return strip_pair_relation::none;
     }
 
-    const point3& inner_center = inner_info.barrel_strip_center;
-    const point3& outer_center = outer_info.barrel_strip_center;
-    const scalar delta_z = outer_center[2] - inner_center[2];
-    if (std::abs(delta_z) >= config.max_strip_center_delta_z) {
-        return false;
+    const std::uint64_t candidate_link =
+        candidate_measurement.surface_link().value();
+    scalar min_value = 0.f;
+    scalar max_value = 0.f;
+    strip_pair_relation relation = strip_pair_relation::none;
+
+    if (candidate_link == reference_info.opposite_surface_link) {
+        relation = strip_pair_relation::opposite;
+        min_value = reference_info.opposite_min;
+        max_value = reference_info.opposite_max;
+    } else if (candidate_link == reference_info.eta_minus_surface_link) {
+        relation = strip_pair_relation::eta_minus;
+        min_value = reference_info.eta_minus_min;
+        max_value = reference_info.eta_minus_max;
+    } else if (candidate_link == reference_info.eta_plus_surface_link) {
+        relation = strip_pair_relation::eta_plus;
+        min_value = reference_info.eta_plus_min;
+        max_value = reference_info.eta_plus_max;
+    } else if (candidate_link == reference_info.phi_minus_surface_link) {
+        const scalar reference_value = reference_info.is_endcap != 0u
+                                           ? reference_info.strip_index
+                                           : reference_info.active_local;
+        const scalar candidate_value = candidate_info.is_endcap != 0u
+                                           ? candidate_info.strip_index
+                                           : candidate_info.active_local;
+        if ((reference_value < reference_info.phi_minus_reference_min) ||
+            (reference_value > reference_info.phi_minus_reference_max) ||
+            (candidate_value < reference_info.phi_minus_candidate_min) ||
+            (candidate_value > reference_info.phi_minus_candidate_max)) {
+            return strip_pair_relation::none;
+        }
+        return strip_pair_relation::phi_minus;
+    } else if (candidate_link == reference_info.phi_plus_surface_link) {
+        const scalar reference_value = reference_info.is_endcap != 0u
+                                           ? reference_info.strip_index
+                                           : reference_info.active_local;
+        const scalar candidate_value = candidate_info.is_endcap != 0u
+                                           ? candidate_info.strip_index
+                                           : candidate_info.active_local;
+        if ((reference_value < reference_info.phi_plus_reference_min) ||
+            (reference_value > reference_info.phi_plus_reference_max) ||
+            (candidate_value < reference_info.phi_plus_candidate_min) ||
+            (candidate_value > reference_info.phi_plus_candidate_max)) {
+            return strip_pair_relation::none;
+        }
+        return strip_pair_relation::phi_plus;
+    } else {
+        return strip_pair_relation::none;
     }
 
-    const scalar inner_r =
-        std::sqrt(inner_center[0] * inner_center[0] +
-                  inner_center[1] * inner_center[1]);
-    const scalar outer_r =
-        std::sqrt(outer_center[0] * outer_center[0] +
-                  outer_center[1] * outer_center[1]);
-    const scalar delta_r = outer_r - inner_r;
-
-    // Only search inner-to-outer pairs. This also avoids duplicate pairs.
-    if ((delta_r <= config.min_strip_center_delta_r) ||
-        (delta_r >= config.max_strip_center_delta_r)) {
-        return false;
+    scalar difference = candidate_info.active_local - reference_info.active_local;
+    if (candidate_info.barrel_ec < 0) {
+        difference = -difference;
     }
-
-    const scalar delta_x = outer_center[0] - inner_center[0];
-    const scalar delta_y = outer_center[1] - inner_center[1];
-    const scalar delta_xy2 = delta_x * delta_x + delta_y * delta_y;
-    const scalar max_delta_xy2 = config.max_strip_center_delta_xy *
-                                 config.max_strip_center_delta_xy;
-    if (delta_xy2 >= max_delta_xy2) {
-        return false;
-    }
-
-    return true;
+    return ((difference >= min_value) && (difference <= max_value))
+               ? relation
+               : strip_pair_relation::none;
 }
 
-
-/// Return whether two endcap strip measurements are pair candidates.
-template <typename measurement_backend_t>
-TRACCC_HOST_DEVICE inline bool is_compatible_endcap_strip_pair(
-    const edm::measurement<measurement_backend_t>& first_measurement,
-    const edm::measurement<measurement_backend_t>& second_measurement,
-    const strip_measurement_surface_info& first_info,
-    const strip_measurement_surface_info& second_info,
-    const endcap_strip_pair_config& config) {
-
-    if ((first_measurement.dimensions() != 1u) ||
-        (second_measurement.dimensions() != 1u) ||
-        (first_info.is_endcap == 0u) || (second_info.is_endcap == 0u) ||
-        (first_info.has_endcap_material == 0u) ||
-        (second_info.has_endcap_material == 0u)) {
-        return false;
-    }
-
-    const point3& first_center = first_info.endcap_strip_center;
-    const point3& second_center = second_info.endcap_strip_center;
-
-    // Require both strips to be on the same endcap side.
-    if (first_center[2] * second_center[2] <= 0.f) {
-        return false;
-    }
-
-    // Search from smaller to larger absolute z to avoid duplicate pairs.
-    const scalar delta_abs_z =
-        std::abs(second_center[2]) - std::abs(first_center[2]);
-    if ((delta_abs_z <= config.min_strip_center_delta_abs_z) ||
-        (delta_abs_z >= config.max_strip_center_delta_abs_z)) {
-        return false;
-    }
-
-    const scalar delta_x = second_center[0] - first_center[0];
-    const scalar delta_y = second_center[1] - first_center[1];
-    const scalar delta_xy2 = delta_x * delta_x + delta_y * delta_y;
-    const scalar max_delta_xy2 = config.max_strip_center_delta_xy *
-                                 config.max_strip_center_delta_xy;
-    if (delta_xy2 >= max_delta_xy2) {
-        return false;
-    }
-
-    return true;
+TRACCC_HOST_DEVICE inline bool is_overlap_relation(
+    const strip_pair_relation relation) {
+    return (relation == strip_pair_relation::eta_minus) ||
+           (relation == strip_pair_relation::eta_plus) ||
+           (relation == strip_pair_relation::phi_minus) ||
+           (relation == strip_pair_relation::phi_plus);
 }
 
 }  // namespace details

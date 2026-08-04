@@ -7,7 +7,7 @@
 
 #pragma once
 
-// VecMem include(s).
+#include <vecmem/containers/device_vector.hpp>
 #include <vecmem/memory/device_atomic_ref.hpp>
 
 namespace traccc::device {
@@ -15,80 +15,54 @@ namespace traccc::device {
 template <typename detector_t>
 TRACCC_HOST_DEVICE inline void count_strip_pairs(
     const global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view&
-        measurements_view,
-    const strip_measurement_surface_info_collection_types::const_view&
-        surface_infos_view,
-    const barrel_strip_pair_config& barrel_config,
-    const endcap_strip_pair_config& endcap_config, unsigned int& n_pairs,
-    unsigned int& n_barrel_pairs, unsigned int& n_endcap_pairs,
-    unsigned int& n_endcap_boundary_pairs) {
+    const edm::measurement_collection<default_algebra>::const_view& measurements_view,
+    const strip_measurement_surface_info_collection_types::const_view& surface_infos_view,
+    const vecmem::data::vector_view<unsigned int>& candidate_indices_view,
+    unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs) {
 
-    const edm::measurement_collection<default_algebra>::const_device
-        measurements(measurements_view);
-    const strip_measurement_surface_info_collection_types::const_device
-        surface_infos(surface_infos_view);
+    const edm::measurement_collection<default_algebra>::const_device measurements(measurements_view);
+    const strip_measurement_surface_info_collection_types::const_device surface_infos(surface_infos_view);
+    const vecmem::device_vector<unsigned int> candidate_indices(
+        candidate_indices_view);
     (void)det_view;
-    if (globalIndex >= measurements.size()) {
+    if ((globalIndex >= measurements.size()) || (globalIndex >= surface_infos.size())) {
         return;
     }
 
-    const edm::measurement inner_measurement = measurements.at(globalIndex);
-    unsigned int n_compatible_barrel_pairs = 0u;
-    unsigned int n_compatible_endcap_pairs = 0u;
-    unsigned int n_compatible_endcap_boundary_pairs = 0u;
+    const edm::measurement reference_measurement = measurements.at(globalIndex);
+    const strip_measurement_surface_info reference_info = surface_infos.at(globalIndex);
+    unsigned int opposite_count = 0u;
+    unsigned int overlap_count = 0u;
 
-    for (unsigned int other_index = 0u; other_index < measurements.size();
-         ++other_index) {
-        if (other_index == globalIndex) {
+    const unsigned int candidate_end =
+        reference_info.candidate_measurement_begin +
+        reference_info.candidate_measurement_count;
+    for (unsigned int position = reference_info.candidate_measurement_begin;
+         position < candidate_end; ++position) {
+        if (position >= candidate_indices.size()) {
+            break;
+        }
+        const unsigned int candidate_index = candidate_indices.at(position);
+        if ((candidate_index == globalIndex) ||
+            (candidate_index >= measurements.size()) ||
+            (candidate_index >= surface_infos.size())) {
             continue;
         }
-
-        const edm::measurement outer_measurement = measurements.at(other_index);
-        strip_measurement_surface_info inner_info{};
-        strip_measurement_surface_info outer_info{};
-        if ((globalIndex < surface_infos.size()) &&
-            (other_index < surface_infos.size())) {
-            inner_info = surface_infos.at(globalIndex);
-            outer_info = surface_infos.at(other_index);
-        }
-
-        if ((inner_info.has_barrel_material != 0u) &&
-            (outer_info.has_barrel_material != 0u)) {
-            if (details::is_compatible_barrel_strip_pair(
-                    inner_measurement, outer_measurement, inner_info,
-                    outer_info, barrel_config)) {
-                ++n_compatible_barrel_pairs;
-            }
-        } else if ((inner_info.has_endcap_material != 0u) &&
-                   (outer_info.has_endcap_material != 0u)) {
-            if (details::is_compatible_endcap_strip_pair(
-                    inner_measurement, outer_measurement, inner_info,
-                    outer_info, endcap_config)) {
-                ++n_compatible_endcap_pairs;
-                ++n_compatible_endcap_boundary_pairs;
-            }
+        const auto relation = details::match_offline_strip_pair(
+            reference_measurement, measurements.at(candidate_index), reference_info,
+            surface_infos.at(candidate_index));
+        if (relation == strip_pair_relation::opposite) {
+            ++opposite_count;
+        } else if (details::is_overlap_relation(relation)) {
+            ++overlap_count;
         }
     }
 
-    const unsigned int n_compatible_pairs =
-        n_compatible_barrel_pairs + n_compatible_endcap_pairs;
-    if (n_compatible_pairs > 0u) {
-        vecmem::device_atomic_ref<unsigned int> total_pairs(n_pairs);
-        total_pairs.fetch_add(n_compatible_pairs);
+    if (opposite_count > 0u) {
+        vecmem::device_atomic_ref<unsigned int>(n_opposite_pairs).fetch_add(opposite_count);
     }
-    if (n_compatible_barrel_pairs > 0u) {
-        vecmem::device_atomic_ref<unsigned int> barrel_pairs(n_barrel_pairs);
-        barrel_pairs.fetch_add(n_compatible_barrel_pairs);
-    }
-    if (n_compatible_endcap_pairs > 0u) {
-        vecmem::device_atomic_ref<unsigned int> endcap_pairs(n_endcap_pairs);
-        endcap_pairs.fetch_add(n_compatible_endcap_pairs);
-    }
-    if (n_compatible_endcap_boundary_pairs > 0u) {
-        vecmem::device_atomic_ref<unsigned int> endcap_boundary_pairs(
-            n_endcap_boundary_pairs);
-        endcap_boundary_pairs.fetch_add(n_compatible_endcap_boundary_pairs);
+    if (overlap_count > 0u) {
+        vecmem::device_atomic_ref<unsigned int>(n_overlap_pairs).fetch_add(overlap_count);
     }
 }
 

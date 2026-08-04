@@ -7,7 +7,7 @@
 
 #pragma once
 
-// VecMem include(s).
+#include <vecmem/containers/device_vector.hpp>
 #include <vecmem/memory/device_atomic_ref.hpp>
 
 namespace traccc::device {
@@ -15,110 +15,84 @@ namespace traccc::device {
 template <typename detector_t>
 TRACCC_HOST_DEVICE inline void find_strip_pairs(
     const global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view&
-        measurements_view,
-    const strip_measurement_surface_info_collection_types::const_view&
-        surface_infos_view,
-    const barrel_strip_pair_config& barrel_config,
-    const endcap_strip_pair_config& endcap_config, unsigned int& pair_position,
-    strip_pair_collection_types::view pairs_view) {
+    const edm::measurement_collection<default_algebra>::const_view& measurements_view,
+    const strip_measurement_surface_info_collection_types::const_view& surface_infos_view,
+    const vecmem::data::vector_view<unsigned int>& candidate_indices_view,
+    unsigned int& opposite_position, unsigned int& overlap_position,
+    strip_pair_collection_types::view opposite_pairs_view,
+    strip_pair_collection_types::view overlap_pairs_view) {
 
-    const edm::measurement_collection<default_algebra>::const_device
-        measurements(measurements_view);
-    const strip_measurement_surface_info_collection_types::const_device
-        surface_infos(surface_infos_view);
+    const edm::measurement_collection<default_algebra>::const_device measurements(measurements_view);
+    const strip_measurement_surface_info_collection_types::const_device surface_infos(surface_infos_view);
+    const vecmem::device_vector<unsigned int> candidate_indices(
+        candidate_indices_view);
     (void)det_view;
-    if (globalIndex >= measurements.size()) {
+    if ((globalIndex >= measurements.size()) || (globalIndex >= surface_infos.size())) {
         return;
     }
 
-    vecmem::device_vector<strip_pair> pairs(pairs_view);
-    const edm::measurement inner_measurement = measurements.at(globalIndex);
+    vecmem::device_vector<strip_pair> opposite_pairs(opposite_pairs_view);
+    vecmem::device_vector<strip_pair> overlap_pairs(overlap_pairs_view);
+    const edm::measurement reference_measurement = measurements.at(globalIndex);
+    const strip_measurement_surface_info reference_info = surface_infos.at(globalIndex);
 
-    for (unsigned int other_index = 0u; other_index < measurements.size();
-         ++other_index) {
-        if (other_index == globalIndex) {
+    const unsigned int candidate_end =
+        reference_info.candidate_measurement_begin +
+        reference_info.candidate_measurement_count;
+    for (unsigned int position = reference_info.candidate_measurement_begin;
+         position < candidate_end; ++position) {
+        if (position >= candidate_indices.size()) {
+            break;
+        }
+        const unsigned int candidate_index = candidate_indices.at(position);
+        if ((candidate_index == globalIndex) ||
+            (candidate_index >= measurements.size()) ||
+            (candidate_index >= surface_infos.size())) {
+            continue;
+        }
+        const edm::measurement candidate_measurement = measurements.at(candidate_index);
+        const strip_measurement_surface_info candidate_info = surface_infos.at(candidate_index);
+        const auto relation = details::match_offline_strip_pair(
+            reference_measurement, candidate_measurement, reference_info, candidate_info);
+        if (relation == strip_pair_relation::none) {
             continue;
         }
 
-        const edm::measurement outer_measurement = measurements.at(other_index);
-        strip_measurement_surface_info inner_info{};
-        strip_measurement_surface_info outer_info{};
-        if ((globalIndex < surface_infos.size()) &&
-            (other_index < surface_infos.size())) {
-            inner_info = surface_infos.at(globalIndex);
-            outer_info = surface_infos.at(other_index);
-        }
+        const bool barrel = reference_info.has_barrel_material != 0u;
+        const point3 reference_center = barrel ? reference_info.barrel_strip_center
+                                               : reference_info.endcap_strip_center;
+        const point3 candidate_center = barrel ? candidate_info.barrel_strip_center
+                                               : candidate_info.endcap_strip_center;
+        const vector3 reference_normal = barrel ? reference_info.barrel_strip_normal
+                                                : reference_info.endcap_strip_normal;
+        const vector3 candidate_normal = barrel ? candidate_info.barrel_strip_normal
+                                                : candidate_info.endcap_strip_normal;
+        const scalar reference_r = std::sqrt(reference_center[0] * reference_center[0] +
+                                             reference_center[1] * reference_center[1]);
+        const scalar candidate_r = std::sqrt(candidate_center[0] * candidate_center[0] +
+                                             candidate_center[1] * candidate_center[1]);
+        const scalar dx = reference_center[0] - candidate_center[0];
+        const scalar dy = reference_center[1] - candidate_center[1];
+        const strip_pair pair{
+            static_cast<unsigned int>(globalIndex), candidate_index,
+            reference_measurement.surface_link().value(), candidate_measurement.surface_link().value(),
+            candidate_r - reference_r, std::sqrt(dx * dx + dy * dy),
+            reference_center[2] - candidate_center[2],
+            reference_normal[0] * candidate_normal[0] +
+                reference_normal[1] * candidate_normal[1] +
+                reference_normal[2] * candidate_normal[2],
+            reference_info.is_endcap, reference_info.mid_r, candidate_info.mid_r,
+            reference_info.strip_half_length, candidate_info.strip_half_length,
+            details::g80_strip_length_gap_tolerance(reference_info, candidate_info)};
 
-        const bool use_barrel_material =
-            (inner_info.has_barrel_material != 0u) &&
-            (outer_info.has_barrel_material != 0u);
-        const bool use_endcap_material =
-            (inner_info.has_endcap_material != 0u) &&
-            (outer_info.has_endcap_material != 0u);
-        if (use_barrel_material) {
-            if (!details::is_compatible_barrel_strip_pair(
-                    inner_measurement, outer_measurement, inner_info,
-                    outer_info, barrel_config)) {
-                continue;
-            }
-        } else if (use_endcap_material) {
-            if (!details::is_compatible_endcap_strip_pair(
-                    inner_measurement, outer_measurement, inner_info,
-                    outer_info, endcap_config)) {
-                continue;
-            }
+        if (relation == strip_pair_relation::opposite) {
+            const unsigned int position =
+                vecmem::device_atomic_ref<unsigned int>(opposite_position).fetch_add(1u);
+            if (position < opposite_pairs.size()) { opposite_pairs.at(position) = pair; }
         } else {
-            continue;
-        }
-
-        const point3 inner_strip_center =
-            use_barrel_material ? inner_info.barrel_strip_center
-                                : inner_info.endcap_strip_center;
-        const point3 outer_strip_center =
-            use_barrel_material ? outer_info.barrel_strip_center
-                                : outer_info.endcap_strip_center;
-        const scalar inner_strip_r =
-            std::sqrt(inner_strip_center[0] * inner_strip_center[0] +
-                      inner_strip_center[1] * inner_strip_center[1]);
-        const scalar outer_strip_r =
-            std::sqrt(outer_strip_center[0] * outer_strip_center[0] +
-                      outer_strip_center[1] * outer_strip_center[1]);
-        const scalar delta_x = inner_strip_center[0] - outer_strip_center[0];
-        const scalar delta_y = inner_strip_center[1] - outer_strip_center[1];
-        const scalar strip_center_delta_xy =
-            std::sqrt(delta_x * delta_x + delta_y * delta_y);
-        const scalar delta_z = inner_strip_center[2] - outer_strip_center[2];
-        const scalar inner_strip_half_length = inner_info.strip_half_length;
-        const scalar outer_strip_half_length = outer_info.strip_half_length;
-        const vector3 inner_normal =
-            use_barrel_material ? inner_info.barrel_strip_normal
-                                : inner_info.endcap_strip_normal;
-        const vector3 outer_normal =
-            use_barrel_material ? outer_info.barrel_strip_normal
-                                : outer_info.endcap_strip_normal;
-
-        const scalar strip_length_gap_tolerance =
-            details::g80_strip_length_gap_tolerance(inner_info, outer_info);
-        vecmem::device_atomic_ref<unsigned int> next_position(pair_position);
-        const unsigned int position = next_position.fetch_add(1u);
-        if (position < pairs.size()) {
-            pairs.at(position) = {static_cast<unsigned int>(globalIndex),
-                                  other_index,
-                                  inner_measurement.surface_link().value(),
-                                  outer_measurement.surface_link().value(),
-                                  outer_strip_r - inner_strip_r,
-                                  strip_center_delta_xy,
-                                  delta_z,
-                                  inner_normal[0] * outer_normal[0] +
-                                      inner_normal[1] * outer_normal[1] +
-                                      inner_normal[2] * outer_normal[2],
-                                  use_endcap_material ? 1u : 0u,
-                                  inner_info.mid_r,
-                                  outer_info.mid_r,
-                                  inner_strip_half_length,
-                                  outer_strip_half_length,
-                                  strip_length_gap_tolerance};
+            const unsigned int position =
+                vecmem::device_atomic_ref<unsigned int>(overlap_position).fetch_add(1u);
+            if (position < overlap_pairs.size()) { overlap_pairs.at(position) = pair; }
         }
     }
 }

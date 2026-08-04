@@ -25,64 +25,72 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     const edm::measurement_collection<default_algebra>::const_view&
         measurements,
     const strip_measurement_surface_info_collection_types::const_view&
-        surface_infos) const -> output_type {
+        surface_infos,
+    const vecmem::data::vector_view<unsigned int>& candidate_indices) const
+    -> output_type {
 
-    // Get the number of measurements. In an asynchronous way if possible.
     edm::measurement_collection<default_algebra>::const_view::size_type
         n_measurements = 0u;
     if (mr().host) {
         vecmem::async_size size = copy().get_size(measurements, *(mr().host));
-        // Here we could give control back to the caller, once our code allows
-        // for it. (coroutines...)
         n_measurements = size.get();
     } else {
         n_measurements = copy().get_size(measurements);
     }
 
-    // If there are no measurements, return right away.
-    if (n_measurements == 0) {
+    if (n_measurements == 0u) {
         return {};
     }
 
-    // Count compatible strip measurement pairs on the device.
-    const barrel_strip_pair_config barrel_pair_config{};
-    const endcap_strip_pair_config endcap_pair_config{};
-    vecmem::data::vector_buffer<unsigned int> pair_counter_buffer(4u,
+    vecmem::data::vector_buffer<unsigned int> pair_counter_buffer(2u,
                                                                   mr().main);
     copy().setup(pair_counter_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
     count_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
-                              barrel_pair_config, endcap_pair_config,
-                              pair_counter_buffer.ptr()[0],
-                              pair_counter_buffer.ptr()[1],
-                              pair_counter_buffer.ptr()[2],
-                              pair_counter_buffer.ptr()[3]});
+                              candidate_indices, pair_counter_buffer.ptr()[0],
+                              pair_counter_buffer.ptr()[1]});
 
-    // Copy the pair count back to the host before allocating the pair buffer.
     vecmem::vector<unsigned int> pair_counter_host(
         mr().host ? mr().host : &(mr().main));
     copy()(pair_counter_buffer, pair_counter_host)->wait();
-    const unsigned int n_pairs = pair_counter_host.at(0);
+    const unsigned int n_opposite_pairs = pair_counter_host.at(0);
+    const unsigned int n_overlap_pairs = pair_counter_host.at(1);
 
-    // Fill the pair buffer using the same search conditions as the count pass.
-    if (n_pairs == 0u) {
-        return {};
+    strip_pair_collection_types::buffer opposite_pairs_buffer(
+        n_opposite_pairs, mr().main);
+    strip_pair_collection_types::buffer overlap_pairs_buffer(
+        n_overlap_pairs, mr().main);
+    copy().setup(opposite_pairs_buffer)->ignore();
+    copy().setup(overlap_pairs_buffer)->ignore();
+
+    if ((n_opposite_pairs + n_overlap_pairs) > 0u) {
+        copy().memset(pair_counter_buffer, 0)->ignore();
+        find_strip_pairs_kernel(
+            {n_measurements, det, measurements, surface_infos,
+             candidate_indices, pair_counter_buffer.ptr()[0],
+             pair_counter_buffer.ptr()[1],
+             opposite_pairs_buffer, overlap_pairs_buffer});
     }
-    strip_pair_collection_types::buffer pairs_buffer(n_pairs, mr().main);
-    copy().setup(pairs_buffer)->ignore();
-    copy().memset(pair_counter_buffer, 0)->ignore();
-    find_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
-                             barrel_pair_config, endcap_pair_config,
-                             pair_counter_buffer.ptr()[0], pairs_buffer});
 
-    edm::spacepoint_collection::buffer spacepoints(
-        n_pairs, mr().main, vecmem::data::buffer_type::resizable);
-    copy().setup(spacepoints)->ignore();
-    form_spacepoints_kernel(
-        {n_pairs, det, measurements, pairs_buffer, surface_infos, spacepoints});
+    edm::spacepoint_collection::buffer opposite_spacepoints(
+        n_opposite_pairs, mr().main, vecmem::data::buffer_type::resizable);
+    edm::spacepoint_collection::buffer overlap_spacepoints(
+        n_overlap_pairs, mr().main, vecmem::data::buffer_type::resizable);
+    copy().setup(opposite_spacepoints)->ignore();
+    copy().setup(overlap_spacepoints)->ignore();
 
-    // Return the reconstructed spacepoints.
-    return spacepoints;
+    if (n_opposite_pairs > 0u) {
+        form_spacepoints_kernel({n_opposite_pairs, det, measurements,
+                                 opposite_pairs_buffer, surface_infos,
+                                 opposite_spacepoints});
+    }
+    if (n_overlap_pairs > 0u) {
+        form_spacepoints_kernel({n_overlap_pairs, det, measurements,
+                                 overlap_pairs_buffer, surface_infos,
+                                 overlap_spacepoints});
+    }
+
+    return {std::move(opposite_spacepoints), std::move(overlap_spacepoints)};
 }
 
 }  // namespace traccc::device
