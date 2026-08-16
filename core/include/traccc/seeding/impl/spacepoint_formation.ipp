@@ -69,7 +69,10 @@ TRACCC_HOST_DEVICE inline bool make_g80_strip_spacepoint(
     const scalar second_half_length,
     const scalar strip_length_gap_tolerance) {
 
-    constexpr scalar strip_length_limit = 1.01f;
+    // Match G80's `double limit = 1. + float_tolerance` evaluation.
+    constexpr scalar strip_length_tolerance = static_cast<scalar>(0.01f);
+    constexpr scalar strip_length_limit =
+        scalar{1} + strip_length_tolerance;
     const scalar first_denominator = dot3(first_direction, second_normal);
     const scalar second_denominator = dot3(second_direction, first_normal);
     if ((first_half_length <= 0.f) || (second_half_length <= 0.f) ||
@@ -176,7 +179,10 @@ TRACCC_HOST_DEVICE inline void fill_corrected_strip_spacepoint_from_lines(
     // m/n parameter where +/-1 corresponds to the strip endpoints. Here the
     // line directions are local-coordinate steps, so parameter/half_length is
     // the corresponding dimensionless quantity.
-    constexpr scalar strip_length_limit = 1.01f;
+    // Match G80's `double limit = 1. + float_tolerance` evaluation.
+    constexpr scalar strip_length_tolerance = static_cast<scalar>(0.01f);
+    constexpr scalar strip_length_limit =
+        scalar{1} + strip_length_tolerance;
     if ((first_half_length > 0.f) && (second_half_length > 0.f)) {
         scalar first_q = first_parameter / first_half_length;
         scalar second_q = second_parameter / second_half_length;

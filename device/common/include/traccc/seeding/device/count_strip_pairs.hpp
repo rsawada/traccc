@@ -20,8 +20,8 @@ template <typename detector_t>
 TRACCC_HOST_DEVICE inline void count_strip_pairs(
     global_index_t globalIndex, typename detector_t::view det_view,
     const edm::measurement_collection<default_algebra>::const_view& measurements_view,
-    const strip_measurement_surface_info_collection_types::const_view& surface_infos_view,
-    const vecmem::data::vector_view<unsigned int>& candidate_indices_view,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
     unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs);
 
 }  // namespace traccc::device

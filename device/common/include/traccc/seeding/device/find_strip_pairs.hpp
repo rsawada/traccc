@@ -20,8 +20,9 @@ template <typename detector_t>
 TRACCC_HOST_DEVICE inline void find_strip_pairs(
     global_index_t globalIndex, typename detector_t::view det_view,
     const edm::measurement_collection<default_algebra>::const_view& measurements_view,
-    const strip_measurement_surface_info_collection_types::const_view& surface_infos_view,
-    const vecmem::data::vector_view<unsigned int>& candidate_indices_view,
+    const strip_measurement_surface_info_collection_types::const_view&
+        surface_infos_view,
+    const point3& beam_spot,
     unsigned int& opposite_position, unsigned int& overlap_position,
     strip_pair_collection_types::view opposite_pairs_view,
     strip_pair_collection_types::view overlap_pairs_view);

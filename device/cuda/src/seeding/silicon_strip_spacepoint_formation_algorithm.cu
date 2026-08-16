@@ -26,13 +26,12 @@ __global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
-    vecmem::data::vector_view<unsigned int> candidate_indices,
     unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::count_strip_pairs<detector_t>(
         details::global_index1(), detector, measurements, surface_infos,
-        candidate_indices, n_opposite_pairs, n_overlap_pairs);
+        n_opposite_pairs, n_overlap_pairs);
 }
 
 template <typename detector_t>
@@ -41,7 +40,7 @@ __global__ void __launch_bounds__(1024, 1) find_strip_pairs_kernel(
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
-    vecmem::data::vector_view<unsigned int> candidate_indices,
+    point3 beam_spot,
     unsigned int& opposite_position, unsigned int& overlap_position,
     strip_pair_collection_types::view opposite_pairs,
     strip_pair_collection_types::view overlap_pairs)
@@ -49,7 +48,7 @@ __global__ void __launch_bounds__(1024, 1) find_strip_pairs_kernel(
 {
     device::find_strip_pairs<detector_t>(
         details::global_index1(), detector, measurements, surface_infos,
-        candidate_indices, opposite_position, overlap_position,
+        beam_spot, opposite_position, overlap_position,
         opposite_pairs, overlap_pairs);
 }
 
@@ -60,12 +59,13 @@ __global__ void __launch_bounds__(1024, 1) form_barrel_strip_spacepoints_kernel(
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_pair_collection_types::const_view pairs,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
+    point3 beam_spot,
     edm::spacepoint_collection::view spacepoints)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::form_barrel_strip_spacepoints<detector_t>(
         details::global_index1(), detector, measurements, pairs, surface_infos,
-        spacepoints);
+        beam_spot, spacepoints);
 }
 
 }  // namespace kernels
@@ -90,8 +90,7 @@ void silicon_strip_spacepoint_formation_algorithm::count_strip_pairs_kernel(
             kernels::count_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.surface_infos,
-                    payload.candidate_indices, payload.n_opposite_pairs,
-                    payload.n_overlap_pairs);
+                    payload.n_opposite_pairs, payload.n_overlap_pairs);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
 }
@@ -108,7 +107,7 @@ void silicon_strip_spacepoint_formation_algorithm::find_strip_pairs_kernel(
             kernels::find_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.surface_infos,
-                    payload.candidate_indices, payload.opposite_position,
+                    payload.beam_spot, payload.opposite_position,
                     payload.overlap_position,
                     payload.opposite_pairs, payload.overlap_pairs);
         });
@@ -127,7 +126,8 @@ void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
             kernels::form_barrel_strip_spacepoints_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.pairs,
-                    payload.surface_infos, payload.spacepoints);
+                    payload.surface_infos, payload.beam_spot,
+                    payload.spacepoints);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
 }

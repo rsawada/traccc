@@ -39,7 +39,7 @@ class silicon_strip_spacepoint_formation_algorithm
           const detector_buffer&,
           const edm::measurement_collection<default_algebra>::const_view&,
           const strip_measurement_surface_info_collection_types::const_view&,
-          const vecmem::data::vector_view<unsigned int>&)>,
+          const point3&)>,
       public messaging,
       public algorithm_base {
 
@@ -59,7 +59,8 @@ class silicon_strip_spacepoint_formation_algorithm
     ///
     /// @param det Detector object
     /// @param measurements A collection of measurements
-    /// @param surface_infos Per-measurement strip surface information
+    /// @param surface_infos Static strip surface information
+    /// @param beam_spot Beam-spot position for strip-plane construction
     /// @return A spacepoint buffer, with one spacepoint for every
     ///         silicon strip measurement
     ///
@@ -69,7 +70,7 @@ class silicon_strip_spacepoint_formation_algorithm
             measurements,
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos,
-        const vecmem::data::vector_view<unsigned int>& candidate_indices) const override;
+        const point3& beam_spot) const override;
 
     protected:
     /// @name Function(s) to be implemented by derived classes
@@ -85,11 +86,9 @@ class silicon_strip_spacepoint_formation_algorithm
         /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
-        /// Per-measurement strip surface information.
+        /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
-        /// Measurement indices on opposite and neighbouring surfaces.
-        const vecmem::data::vector_view<unsigned int>& candidate_indices;
         /// Number of opposite-side strip pairs.
         unsigned int& n_opposite_pairs;
         /// Number of overlap strip pairs.
@@ -110,11 +109,11 @@ class silicon_strip_spacepoint_formation_algorithm
         /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
-        /// Per-measurement strip surface information.
+        /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
-        /// Measurement indices on opposite and neighbouring surfaces.
-        const vecmem::data::vector_view<unsigned int>& candidate_indices;
+        /// Beam-spot position.
+        const point3& beam_spot;
         /// Next positions in the two output pair buffers.
         unsigned int& opposite_position;
         unsigned int& overlap_position;
@@ -138,9 +137,11 @@ class silicon_strip_spacepoint_formation_algorithm
             measurements;
         /// The compatible barrel strip pairs.
         const strip_pair_collection_types::const_view& pairs;
-        /// Per-measurement strip material prepared on the host.
+        /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
+        /// Beam-spot position.
+        const point3& beam_spot;
         /// The output spacepoints.
         edm::spacepoint_collection::view& spacepoints;
     };

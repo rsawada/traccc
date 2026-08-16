@@ -26,7 +26,7 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
         measurements,
     const strip_measurement_surface_info_collection_types::const_view&
         surface_infos,
-    const vecmem::data::vector_view<unsigned int>& candidate_indices) const
+    const point3& beam_spot) const
     -> output_type {
 
     edm::measurement_collection<default_algebra>::const_view::size_type
@@ -47,7 +47,7 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     copy().setup(pair_counter_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
     count_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
-                              candidate_indices, pair_counter_buffer.ptr()[0],
+                              pair_counter_buffer.ptr()[0],
                               pair_counter_buffer.ptr()[1]});
 
     vecmem::vector<unsigned int> pair_counter_host(
@@ -66,8 +66,8 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     if ((n_opposite_pairs + n_overlap_pairs) > 0u) {
         copy().memset(pair_counter_buffer, 0)->ignore();
         find_strip_pairs_kernel(
-            {n_measurements, det, measurements, surface_infos,
-             candidate_indices, pair_counter_buffer.ptr()[0],
+            {n_measurements, det, measurements, surface_infos, beam_spot,
+             pair_counter_buffer.ptr()[0],
              pair_counter_buffer.ptr()[1],
              opposite_pairs_buffer, overlap_pairs_buffer});
     }
@@ -82,11 +82,13 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     if (n_opposite_pairs > 0u) {
         form_spacepoints_kernel({n_opposite_pairs, det, measurements,
                                  opposite_pairs_buffer, surface_infos,
+                                 beam_spot,
                                  opposite_spacepoints});
     }
     if (n_overlap_pairs > 0u) {
         form_spacepoints_kernel({n_overlap_pairs, det, measurements,
                                  overlap_pairs_buffer, surface_infos,
+                                 beam_spot,
                                  overlap_spacepoints});
     }
 
