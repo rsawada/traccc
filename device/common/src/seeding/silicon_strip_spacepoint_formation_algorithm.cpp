@@ -9,8 +9,8 @@
 #include "traccc/seeding/device/silicon_strip_spacepoint_formation_algorithm.hpp"
 
 // VecMem include(s).
-#include <vecmem/containers/vector.hpp>
 #include <vecmem/containers/data/vector_buffer.hpp>
+#include <vecmem/containers/vector.hpp>
 
 namespace traccc::device {
 
@@ -26,8 +26,8 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
         measurements,
     const strip_measurement_surface_info_collection_types::const_view&
         surface_infos,
-    const point3& beam_spot) const
-    -> output_type {
+    const strip_pairing_rule_collection_types::const_view& pairing_rules,
+    const point3& beam_spot) const -> output_type {
 
     edm::measurement_collection<default_algebra>::const_view::size_type
         n_measurements = 0u;
@@ -47,29 +47,30 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     copy().setup(pair_counter_buffer)->ignore();
     copy().memset(pair_counter_buffer, 0)->ignore();
     count_strip_pairs_kernel({n_measurements, det, measurements, surface_infos,
+                              pairing_rules, beam_spot,
                               pair_counter_buffer.ptr()[0],
                               pair_counter_buffer.ptr()[1]});
 
-    vecmem::vector<unsigned int> pair_counter_host(
-        mr().host ? mr().host : &(mr().main));
+    vecmem::vector<unsigned int> pair_counter_host(mr().host ? mr().host
+                                                             : &(mr().main));
     copy()(pair_counter_buffer, pair_counter_host)->wait();
     const unsigned int n_opposite_pairs = pair_counter_host.at(0);
     const unsigned int n_overlap_pairs = pair_counter_host.at(1);
 
-    strip_pair_collection_types::buffer opposite_pairs_buffer(
-        n_opposite_pairs, mr().main);
-    strip_pair_collection_types::buffer overlap_pairs_buffer(
-        n_overlap_pairs, mr().main);
+    strip_pair_collection_types::buffer opposite_pairs_buffer(n_opposite_pairs,
+                                                              mr().main);
+    strip_pair_collection_types::buffer overlap_pairs_buffer(n_overlap_pairs,
+                                                             mr().main);
     copy().setup(opposite_pairs_buffer)->ignore();
     copy().setup(overlap_pairs_buffer)->ignore();
 
     if ((n_opposite_pairs + n_overlap_pairs) > 0u) {
         copy().memset(pair_counter_buffer, 0)->ignore();
-        find_strip_pairs_kernel(
-            {n_measurements, det, measurements, surface_infos, beam_spot,
-             pair_counter_buffer.ptr()[0],
-             pair_counter_buffer.ptr()[1],
-             opposite_pairs_buffer, overlap_pairs_buffer});
+        find_strip_pairs_kernel({n_measurements, det, measurements,
+                                 surface_infos, pairing_rules, beam_spot,
+                                 pair_counter_buffer.ptr()[0],
+                                 pair_counter_buffer.ptr()[1],
+                                 opposite_pairs_buffer, overlap_pairs_buffer});
     }
 
     edm::spacepoint_collection::buffer opposite_spacepoints(
@@ -82,13 +83,11 @@ auto silicon_strip_spacepoint_formation_algorithm::operator()(
     if (n_opposite_pairs > 0u) {
         form_spacepoints_kernel({n_opposite_pairs, det, measurements,
                                  opposite_pairs_buffer, surface_infos,
-                                 beam_spot,
-                                 opposite_spacepoints});
+                                 beam_spot, opposite_spacepoints});
     }
     if (n_overlap_pairs > 0u) {
         form_spacepoints_kernel({n_overlap_pairs, det, measurements,
-                                 overlap_pairs_buffer, surface_infos,
-                                 beam_spot,
+                                 overlap_pairs_buffer, surface_infos, beam_spot,
                                  overlap_spacepoints});
     }
 

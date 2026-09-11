@@ -74,7 +74,11 @@ void read_spacepoints(
              edm::spacepoint_collection::host::INVALID_MEASUREMENT_INDEX,
              {iohit.tx, iohit.ty, iohit.tz},
              0.f,
-             0.f});
+             0.f,
+             vector3{0.f, 0.f, 0.f},
+             vector3{0.f, 0.f, 0.f},
+             vector3{0.f, 0.f, 0.f},
+             point3{0.f, 0.f, 0.f}});
     }
 }
 

@@ -173,6 +173,38 @@ class spacepoint : public BASE {
         return BASE::template get<4>();
     }
 
+    /// Half-length-scaled direction of the first (top) strip.
+    TRACCC_HOST_DEVICE auto& top_strip_vector() {
+        return BASE::template get<5>();
+    }
+    TRACCC_HOST_DEVICE const auto& top_strip_vector() const {
+        return BASE::template get<5>();
+    }
+
+    /// Half-length-scaled direction of the second (bottom) strip.
+    TRACCC_HOST_DEVICE auto& bottom_strip_vector() {
+        return BASE::template get<6>();
+    }
+    TRACCC_HOST_DEVICE const auto& bottom_strip_vector() const {
+        return BASE::template get<6>();
+    }
+
+    /// Vector from the second strip centre to the first strip centre.
+    TRACCC_HOST_DEVICE auto& strip_center_distance() {
+        return BASE::template get<7>();
+    }
+    TRACCC_HOST_DEVICE const auto& strip_center_distance() const {
+        return BASE::template get<7>();
+    }
+
+    /// First strip centre relative to the beam spot.
+    TRACCC_HOST_DEVICE auto& top_strip_center() {
+        return BASE::template get<8>();
+    }
+    TRACCC_HOST_DEVICE const auto& top_strip_center() const {
+        return BASE::template get<8>();
+    }
+
     /// The azimuthal angle of the spacepoint in the XY plane (non-const)
     ///
     /// @note This function must only be used on proxy objects, not on
@@ -219,7 +251,9 @@ class spacepoint : public BASE {
 using spacepoint_collection = vecmem::edm::container<
     spacepoint, vecmem::edm::type::vector<unsigned int>,
     vecmem::edm::type::vector<unsigned int>, vecmem::edm::type::vector<point3>,
-    vecmem::edm::type::vector<scalar>, vecmem::edm::type::vector<scalar> >;
+    vecmem::edm::type::vector<scalar>, vecmem::edm::type::vector<scalar>,
+    vecmem::edm::type::vector<vector3>, vecmem::edm::type::vector<vector3>,
+    vecmem::edm::type::vector<vector3>, vecmem::edm::type::vector<point3> >;
 
 }  // namespace traccc::edm
 

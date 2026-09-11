@@ -45,6 +45,8 @@ traccc_add_library( traccc_device_common device_common
    # Seed finding code.
    "include/traccc/seeding/device/form_spacepoints.hpp"
    "include/traccc/seeding/device/impl/form_spacepoints.ipp"
+   "include/traccc/seeding/device/form_strip_spacepoints_from_pairs.hpp"
+   "include/traccc/seeding/device/impl/form_strip_spacepoints_from_pairs.ipp"
    "include/traccc/seeding/device/count_strip_pairs.hpp"
    "include/traccc/seeding/device/impl/count_strip_pairs.ipp"
    "include/traccc/seeding/device/find_strip_pairs.hpp"

@@ -17,8 +17,8 @@ namespace traccc::cuda {
 
 /// Algorithm forming space points out of measurements
 ///
-/// This algorithm performs the local-to-global transformation of the 2D
-/// measurements made on every detector module, into 3D spacepoint coordinates.
+/// This algorithm forms 3D spacepoints from compatible pairs of 1D strip
+/// measurements, using adapter-provided static geometry and pairing rules.
 ///
 class silicon_strip_spacepoint_formation_algorithm
     : public device::silicon_strip_spacepoint_formation_algorithm,

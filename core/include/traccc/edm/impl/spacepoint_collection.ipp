@@ -73,7 +73,11 @@ TRACCC_HOST_DEVICE bool spacepoint<BASE>::operator==(
             (math::fabs(y() - other.y()) < 1e-6f) &&
             (math::fabs(z() - other.z()) < 1e-6f) &&
             (z_variance() == other.z_variance()) &&
-            (radius_variance() == other.radius_variance()));
+            (radius_variance() == other.radius_variance()) &&
+            (top_strip_vector() == other.top_strip_vector()) &&
+            (bottom_strip_vector() == other.bottom_strip_vector()) &&
+            (strip_center_distance() == other.strip_center_distance()) &&
+            (top_strip_center() == other.top_strip_center()));
 }
 
 template <typename BASE>

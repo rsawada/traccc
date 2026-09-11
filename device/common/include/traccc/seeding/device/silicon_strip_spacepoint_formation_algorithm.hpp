@@ -11,6 +11,8 @@
 #include "traccc/device/algorithm_base.hpp"
 
 // Project include(s).
+#include <vecmem/containers/data/vector_view.hpp>
+
 #include "traccc/edm/measurement_collection.hpp"
 #include "traccc/edm/spacepoint_collection.hpp"
 #include "traccc/geometry/detector_buffer.hpp"
@@ -18,8 +20,6 @@
 #include "traccc/utils/algorithm.hpp"
 #include "traccc/utils/memory_resource.hpp"
 #include "traccc/utils/messaging.hpp"
-
-#include <vecmem/containers/data/vector_view.hpp>
 
 namespace traccc::device {
 
@@ -31,14 +31,16 @@ struct strip_spacepoint_formation_output {
 
 /// Algorithm forming space points out of measurements
 ///
-/// This algorithm performs the local-to-global transformation of the 2D (strip)
-/// measurements made on every detector module, into 3D spacepoint coordinates.
+/// This algorithm forms 3D spacepoints from compatible pairs of 1D
+/// measurements. Static surface descriptors and directed pairing rules are
+/// adapter inputs.
 ///
 class silicon_strip_spacepoint_formation_algorithm
     : public algorithm<strip_spacepoint_formation_output(
           const detector_buffer&,
           const edm::measurement_collection<default_algebra>::const_view&,
           const strip_measurement_surface_info_collection_types::const_view&,
+          const strip_pairing_rule_collection_types::const_view&,
           const point3&)>,
       public messaging,
       public algorithm_base {
@@ -55,14 +57,14 @@ class silicon_strip_spacepoint_formation_algorithm
         const traccc::memory_resource& mr, vecmem::copy& copy,
         std::unique_ptr<const Logger> logger = getDummyLogger().clone());
 
-    /// Construct spacepoints from 2D silicon strip measurements
+    /// Construct spacepoints from pairs of 1D silicon strip measurements
     ///
     /// @param det Detector object
     /// @param measurements A collection of measurements
     /// @param surface_infos Static strip surface information
+    /// @param pairing_rules Sorted, unique directed surface-pair rules
     /// @param beam_spot Beam-spot position for strip-plane construction
-    /// @return A spacepoint buffer, with one spacepoint for every
-    ///         silicon strip measurement
+    /// @return Separate standard and overlap spacepoint buffers
     ///
     output_type operator()(
         const detector_buffer& det,
@@ -70,6 +72,7 @@ class silicon_strip_spacepoint_formation_algorithm
             measurements,
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos,
+        const strip_pairing_rule_collection_types::const_view& pairing_rules,
         const point3& beam_spot) const override;
 
     protected:
@@ -89,6 +92,8 @@ class silicon_strip_spacepoint_formation_algorithm
         /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
+        const strip_pairing_rule_collection_types::const_view& pairing_rules;
+        const point3& beam_spot;
         /// Number of opposite-side strip pairs.
         unsigned int& n_opposite_pairs;
         /// Number of overlap strip pairs.
@@ -112,6 +117,7 @@ class silicon_strip_spacepoint_formation_algorithm
         /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&
             surface_infos;
+        const strip_pairing_rule_collection_types::const_view& pairing_rules;
         /// Beam-spot position.
         const point3& beam_spot;
         /// Next positions in the two output pair buffers.
@@ -128,14 +134,14 @@ class silicon_strip_spacepoint_formation_algorithm
 
     /// Payload for the @c form_spacepoints_kernel function
     struct form_spacepoints_kernel_payload {
-        /// The number of compatible barrel strip pairs in the event.
+        /// The number of compatible strip pairs in the event.
         strip_pair_collection_types::const_view::size_type n_pairs;
         /// The detector object.
         const detector_buffer& detector;
         /// The input measurements.
         const edm::measurement_collection<default_algebra>::const_view&
             measurements;
-        /// The compatible barrel strip pairs.
+        /// The compatible strip pairs.
         const strip_pair_collection_types::const_view& pairs;
         /// Static strip surface information.
         const strip_measurement_surface_info_collection_types::const_view&

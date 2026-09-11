@@ -16,7 +16,6 @@
 #include "traccc/edm/spacepoint_collection.hpp"
 #include "traccc/geometry/detector_conditions_description.hpp"
 #include "traccc/geometry/detector_design_description.hpp"
-#include "traccc/seeding/detail/strip_pair.hpp"
 
 namespace traccc::device {
 
@@ -39,24 +38,6 @@ TRACCC_HOST_DEVICE inline void form_pixel_spacepoints(
     global_index_t globalIndex, typename detector_t::view det_view,
     const edm::measurement_collection<default_algebra>::const_view&
         measurements_view,
-    edm::spacepoint_collection::view spacepoints_view);
-
-template <typename detector_t>
-TRACCC_HOST_DEVICE inline void form_strip_spacepoints(
-    global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view&
-        measurements_view,
-    edm::spacepoint_collection::view spacepoints_view);
-
-template <typename detector_t>
-TRACCC_HOST_DEVICE inline void form_barrel_strip_spacepoints(
-    global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view&
-        measurements_view,
-    const strip_pair_collection_types::const_view& pairs_view,
-    const strip_measurement_surface_info_collection_types::const_view&
-        surface_infos_view,
-    const point3& beam_spot,
     edm::spacepoint_collection::view spacepoints_view);
 
 }  // namespace traccc::device

@@ -27,6 +27,7 @@ traccc_add_test(cpu
     "test_serializer.cpp"
     "test_simulation.cpp"
     "test_spacepoint_formation.cpp"
+    "test_strip_spacepoint_inputs.cpp"
     "test_track_params_estimation.cpp"
     "test_sanity_ordered_on.cpp"
     "test_sanity_contiguous_on.cpp"

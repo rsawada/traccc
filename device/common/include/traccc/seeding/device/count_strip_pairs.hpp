@@ -7,22 +7,25 @@
 
 #pragma once
 
-#include "traccc/device/global_index.hpp"
+#include <vecmem/containers/data/vector_view.hpp>
+
 #include "traccc/definitions/qualifiers.hpp"
+#include "traccc/device/global_index.hpp"
 #include "traccc/edm/measurement_collection.hpp"
 #include "traccc/seeding/detail/strip_pair.hpp"
-
-#include <vecmem/containers/data/vector_view.hpp>
 
 namespace traccc::device {
 
 template <typename detector_t>
 TRACCC_HOST_DEVICE inline void count_strip_pairs(
     global_index_t globalIndex, typename detector_t::view det_view,
-    const edm::measurement_collection<default_algebra>::const_view& measurements_view,
+    const edm::measurement_collection<default_algebra>::const_view&
+        measurements_view,
     const strip_measurement_surface_info_collection_types::const_view&
         surface_infos_view,
-    unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs);
+    const strip_pairing_rule_collection_types::const_view& rules_view,
+    const point3& beam_spot, unsigned int& n_opposite_pairs,
+    unsigned int& n_overlap_pairs);
 
 }  // namespace traccc::device
 

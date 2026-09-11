@@ -15,7 +15,7 @@
 #include "traccc/geometry/detector.hpp"
 #include "traccc/seeding/device/count_strip_pairs.hpp"
 #include "traccc/seeding/device/find_strip_pairs.hpp"
-#include "traccc/seeding/device/form_spacepoints.hpp"
+#include "traccc/seeding/device/form_strip_spacepoints_from_pairs.hpp"
 
 namespace traccc::cuda {
 namespace kernels {
@@ -26,12 +26,14 @@ __global__ void __launch_bounds__(1024, 1) count_strip_pairs_kernel(
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
-    unsigned int& n_opposite_pairs, unsigned int& n_overlap_pairs)
+    strip_pairing_rule_collection_types::const_view pairing_rules,
+    point3 beam_spot, unsigned int& n_opposite_pairs,
+    unsigned int& n_overlap_pairs)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::count_strip_pairs<detector_t>(
         details::global_index1(), detector, measurements, surface_infos,
-        n_opposite_pairs, n_overlap_pairs);
+        pairing_rules, beam_spot, n_opposite_pairs, n_overlap_pairs);
 }
 
 template <typename detector_t>
@@ -40,30 +42,31 @@ __global__ void __launch_bounds__(1024, 1) find_strip_pairs_kernel(
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
-    point3 beam_spot,
-    unsigned int& opposite_position, unsigned int& overlap_position,
+    strip_pairing_rule_collection_types::const_view pairing_rules,
+    point3 beam_spot, unsigned int& opposite_position,
+    unsigned int& overlap_position,
     strip_pair_collection_types::view opposite_pairs,
     strip_pair_collection_types::view overlap_pairs)
     requires(traccc::is_detector_traits<detector_t>)
 {
     device::find_strip_pairs<detector_t>(
         details::global_index1(), detector, measurements, surface_infos,
-        beam_spot, opposite_position, overlap_position,
+        pairing_rules, beam_spot, opposite_position, overlap_position,
         opposite_pairs, overlap_pairs);
 }
 
 template <typename detector_t>
-__global__ void __launch_bounds__(1024, 1) form_barrel_strip_spacepoints_kernel(
+__global__ void
+__launch_bounds__(1024, 1) form_strip_spacepoints_from_pairs_kernel(
     typename detector_t::view detector,
     typename edm::measurement_collection<
         typename detector_t::device::algebra_type>::const_view measurements,
     strip_pair_collection_types::const_view pairs,
     strip_measurement_surface_info_collection_types::const_view surface_infos,
-    point3 beam_spot,
-    edm::spacepoint_collection::view spacepoints)
+    point3 beam_spot, edm::spacepoint_collection::view spacepoints)
     requires(traccc::is_detector_traits<detector_t>)
 {
-    device::form_barrel_strip_spacepoints<detector_t>(
+    device::form_strip_spacepoints_from_pairs<detector_t>(
         details::global_index1(), detector, measurements, pairs, surface_infos,
         beam_spot, spacepoints);
 }
@@ -90,6 +93,7 @@ void silicon_strip_spacepoint_formation_algorithm::count_strip_pairs_kernel(
             kernels::count_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.surface_infos,
+                    payload.pairing_rules, payload.beam_spot,
                     payload.n_opposite_pairs, payload.n_overlap_pairs);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
@@ -107,8 +111,8 @@ void silicon_strip_spacepoint_formation_algorithm::find_strip_pairs_kernel(
             kernels::find_strip_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.surface_infos,
-                    payload.beam_spot, payload.opposite_position,
-                    payload.overlap_position,
+                    payload.pairing_rules, payload.beam_spot,
+                    payload.opposite_position, payload.overlap_position,
                     payload.opposite_pairs, payload.overlap_pairs);
         });
     TRACCC_CUDA_ERROR_CHECK(cudaGetLastError());
@@ -118,12 +122,11 @@ void silicon_strip_spacepoint_formation_algorithm::form_spacepoints_kernel(
     const form_spacepoints_kernel_payload& payload) const {
 
     const unsigned int n_threads = warp_size() * 8;
-    const unsigned int n_blocks =
-        (payload.n_pairs + n_threads - 1) / n_threads;
+    const unsigned int n_blocks = (payload.n_pairs + n_threads - 1) / n_threads;
     detector_buffer_visitor<detector_type_list>(
         payload.detector, [&]<typename detector_traits_t>(
                               const typename detector_traits_t::view& det) {
-            kernels::form_barrel_strip_spacepoints_kernel<detector_traits_t>
+            kernels::form_strip_spacepoints_from_pairs_kernel<detector_traits_t>
                 <<<n_blocks, n_threads, 0, details::get_stream(stream())>>>(
                     det, payload.measurements, payload.pairs,
                     payload.surface_infos, payload.beam_spot,
